@@ -31,7 +31,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'titles' | 'agencies'>('titles');
   
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  // STATE: Expansion
+  const [expandedId, setExpandedId] = useState<number | null>(null); // For Title Table
+  const [expandedAgency, setExpandedAgency] = useState<string | null>(null); // For Agency Table (NEW)
+  
   const [chartData, setChartData] = useState<RegulationTitle | null>(null);
 
   useEffect(() => {
@@ -50,7 +53,11 @@ export default function DashboardPage() {
   // --- HELPER: CALCULATE CHURN ---
   const getChurn = (history: Snapshot[]): number => {
     if (!history || history.length < 2) return 0;
-    const sorted = [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // Filter only loaded snapshots for math
+    const loadedHistory = history.filter(h => h.isLoaded);
+    if(loadedHistory.length < 2) return 0;
+
+    const sorted = [...loadedHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     const current = sorted[0].wordCount;
     const previous = sorted[1].wordCount;
@@ -61,18 +68,25 @@ export default function DashboardPage() {
     return (diff / previous) * 100;
   };
 
-  // --- AGGREGATION LOGIC ---
+  // --- AGGREGATION LOGIC (UPDATED) ---
   const agencyMetrics = useMemo(() => {
-    const map = new Map<string, { count: number, words: number, scoreSum: number, churnSum: number }>();
+    // We now store the list of titles ('titleList') for the drill-down
+    const map = new Map<string, { count: number, words: number, scoreSum: number, churnSum: number, titleList: RegulationTitle[] }>();
 
     titles.forEach(t => {
         const churnVal = getChurn(t.history);
+        
         t.agencies.forEach(agencyName => {
             if (!map.has(agencyName)) {
-                map.set(agencyName, { count: 0, words: 0, scoreSum: 0, churnSum: 0 });
+                map.set(agencyName, { count: 0, words: 0, scoreSum: 0, churnSum: 0, titleList: [] });
             }
             const entry = map.get(agencyName)!;
+            
+            // Add to the list for the drill-down
+            entry.titleList.push(t);
             entry.count += 1;
+            
+            // Metrics aggregation
             if (t.isAnalyzed) {
                 entry.words += t.currentWordCount;
                 entry.scoreSum += t.currentRestrictionScore;
@@ -84,6 +98,7 @@ export default function DashboardPage() {
     return Array.from(map.entries()).map(([name, stats]) => ({
         name,
         titles: stats.count,
+        titleList: stats.titleList.sort((a,b) => a.number - b.number), // Sort titles 1-50
         words: stats.words,
         avgScore: stats.count > 0 ? (stats.scoreSum / stats.count).toFixed(2) : "0.00",
         avgChurn: stats.count > 0 ? (stats.churnSum / stats.count).toFixed(2) : "0.00"
@@ -100,7 +115,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-black relative">
       
-      {/* 1. NEW NAVIGATION COMPONENT */}
+      {/* 1. NAVIGATION COMPONENT */}
       <Navigation />
 
       <div className="p-8 pt-0">
@@ -129,9 +144,6 @@ export default function DashboardPage() {
                 <div className="bg-green-50 p-2 border border-green-200 text-xs font-mono text-green-900">
                     Formula: (Restrictions / Words) * 1000
                 </div>
-                <p className="text-xs mt-2 text-green-700">
-                    Key terms: "shall", "must", "prohibited".
-                </p>
             </div>
 
             {/* Card 3: Churn Score */}
@@ -146,9 +158,6 @@ export default function DashboardPage() {
                 <div className="bg-yellow-50 p-2 border border-yellow-200 text-xs font-mono text-yellow-900">
                     Formula: |Current - Previous| / Previous
                 </div>
-                <p className="text-xs mt-2 text-yellow-700">
-                    High churn indicates recent major rewrites.
-                </p>
             </div>
         </div>
 
@@ -185,10 +194,9 @@ export default function DashboardPage() {
                 <thead className="bg-black text-white uppercase font-black">
                     <tr>
                     <th className="px-6 py-4">Title</th>
-                    <th className="px-6 py-4">Title Name</th>
+                    <th className="px-6 py-4">Regulation Name</th>
                     <th className="px-6 py-4 text-right">Words</th>
                     <th className="px-6 py-4 text-right">Restrict. Score</th>
-                    <th className="px-6 py-4 text-right">Churn Score</th>
                     <th className="px-6 py-4 text-right">Last Updated</th>
                     <th className="px-6 py-4 text-center">Actions</th>
                     </tr>
@@ -218,13 +226,6 @@ export default function DashboardPage() {
                                 </span>
                                 ) : <span className="text-gray-400 text-xs font-bold">N/A</span>}
                             </td>
-                            <td className="px-6 py-4 text-right border-r border-gray-200">
-                                {title.isAnalyzed ? (
-                                    <span className={`px-2 py-1 text-xs font-bold border ${churn > 0 ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
-                                        {churn.toFixed(2)}%
-                                    </span>
-                                ) : <span className="text-gray-400 text-xs font-bold">N/A</span>}
-                            </td>
                             <td className="px-6 py-4 text-right font-medium text-gray-700 border-r border-gray-200">
                                 {title.isAnalyzed ? title.lastUpdated : <span className="bg-gray-200 text-gray-600 px-2 py-1 text-xs font-bold rounded">METADATA</span>}
                             </td>
@@ -239,16 +240,14 @@ export default function DashboardPage() {
                                 )}
                             </td>
                             </tr>
-                            {/*
-                            // 2. UPDATE THE EXPANDED ROW RENDERING (inside the map loop) */}
+                            
+                            {/* EXPANDED TITLE ROW (SNAPSHOTS) */}
                             {expandedId === title.id && (
                                 <tr className="bg-gray-50 shadow-inner">
                                     <td colSpan={7} className="p-6">
                                         <h4 className="font-black text-sm uppercase text-gray-500 mb-4">
                                             Full Timeline: Title {title.number}
                                         </h4>
-                                        
-                                        {/* Scrollable Container for Long Histories */}
                                         <div className="bg-white border-2 border-gray-300 max-h-96 overflow-y-auto">
                                             <div className="grid grid-cols-5 gap-4 font-bold text-sm border-b-2 border-black p-4 bg-gray-100 sticky top-0">
                                                 <div>Effective Date</div>
@@ -263,35 +262,17 @@ export default function DashboardPage() {
                                             ) : (
                                                 title.history.map((h, i) => (
                                                     <div key={i} className={`grid grid-cols-5 gap-4 text-sm py-2 px-4 border-b border-gray-100 items-center ${h.isLoaded ? 'bg-white' : 'bg-gray-50 text-gray-400'}`}>
-                                                        
-                                                        {/* Date */}
-                                                        <div className={`font-mono ${h.isLoaded ? 'text-blue-800 font-bold' : ''}`}>
-                                                            {h.date}
-                                                        </div>
-
-                                                        {/* Status Badge */}
+                                                        <div className={`font-mono ${h.isLoaded ? 'text-blue-800 font-bold' : ''}`}>{h.date}</div>
                                                         <div>
                                                             {h.isLoaded ? (
-                                                                <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold border border-green-200">
-                                                                    ANALYZED
-                                                                </span>
+                                                                <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold border border-green-200">ANALYZED</span>
                                                             ) : (
-                                                                <span className="bg-gray-200 text-gray-500 text-xs px-2 py-1 rounded font-bold">
-                                                                    NOT LOADED
-                                                                </span>
+                                                                <span className="bg-gray-200 text-gray-500 text-xs px-2 py-1 rounded font-bold">NOT LOADED</span>
                                                             )}
                                                         </div>
-
-                                                        {/* Metrics */}
-                                                        <div className="text-right font-mono">
-                                                            {h.isLoaded ? h.wordCount.toLocaleString() : "—"}
-                                                        </div>
-                                                        <div className="text-right">
-                                                            {h.restrictionScore}
-                                                        </div>
-                                                        <div className="font-mono text-xs truncate" title={h.checksum}>
-                                                            {h.checksum}
-                                                        </div>
+                                                        <div className="text-right font-mono">{h.isLoaded ? h.wordCount.toLocaleString() : "—"}</div>
+                                                        <div className="text-right">{h.restrictionScore}</div>
+                                                        <div className="font-mono text-xs truncate" title={h.checksum}>{h.checksum}</div>
                                                     </div>
                                                 ))
                                             )}
@@ -300,47 +281,100 @@ export default function DashboardPage() {
                                 </tr>
                             )}
                         </Fragment>
-                    );
+                        );
                     })}
                 </tbody>
                 </table>
             )}
 
-            {/* VIEW 2: AGENCY TABLE */}
+            {/* VIEW 2: AGENCY TABLE (UPDATED WITH EXPAND) */}
             {activeTab === 'agencies' && (
                 <table className="min-w-full text-left">
                     <thead className="bg-black text-white uppercase font-black">
                         <tr>
                         <th className="px-6 py-4">Agency Name</th>
                         <th className="px-6 py-4 text-right">Titles Managed</th>
-                        <th className="px-6 py-4 text-right">Total Analyzed Words</th>
-                        <th className="px-6 py-4 text-right">Avg. Restriction Score</th>
-                        <th className="px-6 py-4 text-right">Avg. Churn Score</th>
+                        <th className="px-6 py-4 text-right">Total Words</th>
+                        <th className="px-6 py-4 text-right">Avg. Restrict</th>
+                        <th className="px-6 py-4 text-right">Avg. Churn</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y-2 divide-gray-200">
                         {agencyMetrics.map((agency, idx) => (
-                            <tr key={idx} className="hover:bg-yellow-50 transition-colors">
-                                <td className="px-6 py-4 font-black text-lg border-r border-gray-200">{agency.name}</td>
-                                <td className="px-6 py-4 text-right font-bold border-r border-gray-200">{agency.titles}</td>
-                                <td className="px-6 py-4 text-right font-mono font-bold border-r border-gray-200">
-                                    {agency.words > 0 ? agency.words.toLocaleString() : <span className="text-gray-400">—</span>}
-                                </td>
-                                <td className="px-6 py-4 text-right font-bold border-r border-gray-200">
-                                    {agency.words > 0 ? (
-                                        <span className={`px-2 py-1 text-xs font-bold border ${parseFloat(agency.avgScore) > 50 ? 'bg-black text-white' : 'bg-white text-black border-black'}`}>
-                                            {agency.avgScore}
-                                        </span>
-                                    ) : <span className="text-gray-400 text-xs">N/A</span>}
-                                </td>
-                                <td className="px-6 py-4 text-right font-bold">
-                                    {agency.words > 0 ? (
-                                        <span className={`px-2 py-1 text-xs font-bold border ${parseFloat(agency.avgChurn) > 0 ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
-                                            {agency.avgChurn}%
-                                        </span>
-                                    ) : <span className="text-gray-400 text-xs">N/A</span>}
-                                </td>
-                            </tr>
+                            <Fragment key={idx}>
+                                <tr 
+                                    className={`transition-colors cursor-pointer ${expandedAgency === agency.name ? 'bg-blue-50' : 'hover:bg-yellow-50'}`}
+                                    onClick={() => setExpandedAgency(expandedAgency === agency.name ? null : agency.name)}
+                                >
+                                    <td className="px-6 py-4 font-black text-lg border-r border-gray-200">{agency.name}</td>
+                                    <td className="px-6 py-4 text-right font-bold border-r border-gray-200">{agency.titles}</td>
+                                    <td className="px-6 py-4 text-right font-mono font-bold border-r border-gray-200">
+                                        {agency.words > 0 ? agency.words.toLocaleString() : <span className="text-gray-400">—</span>}
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-bold border-r border-gray-200">
+                                        {agency.words > 0 ? (
+                                            <span className={`px-2 py-1 text-xs font-bold border ${parseFloat(agency.avgScore) > 50 ? 'bg-black text-white' : 'bg-white text-black border-black'}`}>
+                                                {agency.avgScore}
+                                            </span>
+                                        ) : <span className="text-gray-400 text-xs">N/A</span>}
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-bold">
+                                        {agency.words > 0 ? (
+                                            <span className={`px-2 py-1 text-xs font-bold border ${parseFloat(agency.avgChurn) > 0 ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
+                                                {agency.avgChurn}%
+                                            </span>
+                                        ) : <span className="text-gray-400 text-xs">N/A</span>}
+                                    </td>
+                                </tr>
+
+                                {/* EXPANDED AGENCY ROW (TITLES TABLE) */}
+                                {expandedAgency === agency.name && (
+                                    <tr className="bg-gray-50 shadow-inner">
+                                        <td colSpan={5} className="p-6">
+                                            <h4 className="font-black text-sm uppercase text-gray-500 mb-4">
+                                                Titles Managed by: {agency.name}
+                                            </h4>
+                                            
+                                            {/* Nested Scrollable Table */}
+                                            <div className="bg-white border-2 border-gray-300 max-h-80 overflow-y-auto">
+                                                <div className="grid grid-cols-5 gap-4 font-bold text-sm border-b-2 border-black p-4 bg-gray-100 sticky top-0">
+                                                    <div>Title #</div>
+                                                    <div className="col-span-2">Regulation Name</div>
+                                                    <div>Status</div>
+                                                    <div className="text-right">Word Count</div>
+                                                </div>
+
+                                                {agency.titleList.length === 0 ? (
+                                                    <div className="p-4 text-gray-500 italic">No associated titles found.</div>
+                                                ) : (
+                                                    agency.titleList.map((t, i) => (
+                                                        <div key={i} className="grid grid-cols-5 gap-4 text-sm py-3 px-4 border-b border-gray-100 hover:bg-blue-50 items-center">
+                                                            <div className="font-black text-lg">Title {t.number}</div>
+                                                            <div className="col-span-2 font-medium text-gray-800 truncate" title={t.name}>
+                                                                {t.name}
+                                                            </div>
+                                                            <div>
+                                                                {t.isAnalyzed ? (
+                                                                    <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold border border-green-200">
+                                                                        LOADED
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="bg-gray-200 text-gray-500 text-xs px-2 py-1 rounded font-bold">
+                                                                        METADATA
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-right font-mono font-bold">
+                                                                {t.isAnalyzed ? t.currentWordCount.toLocaleString() : "—"}
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </Fragment>
                         ))}
                     </tbody>
                 </table>
@@ -360,7 +394,7 @@ export default function DashboardPage() {
                     <h2 className="text-2xl font-black uppercase mb-2">Analysis: Title {chartData.number}</h2>
                     <div className="h-80 w-full mt-8">
                         <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={getSortedHistory(chartData.history)}>
+                            <LineChart data={getSortedHistory(chartData.history.filter(h => h.isLoaded))}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis dataKey="date" />
                                 <YAxis />
