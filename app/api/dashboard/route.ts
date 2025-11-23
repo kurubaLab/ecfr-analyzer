@@ -27,19 +27,19 @@ export async function GET() {
       // Determine if this is "Metadata Only" or "Analyzed"
       const isAnalyzed = t.snapshots.length > 0;
 
-      return {
+return {
         id: t.titleNumber,
         number: t.titleNumber,
         name: t.titleName,
-        agencies: agencyNames || "Various Agencies",
-        isAnalyzed: isAnalyzed,
         
-        // Current Metrics (or 0 if not analyzed)
-        currentWordCount: latest ? latest.wordCount.toLocaleString() : "—",
-        currentRestrictionScore: latest ? latest.restrictionDensityScore.toFixed(2) : "—",
+        // CHANGE: Return the array, not just the string
+        agencies: t.agencies.map(a => a.agency.name), 
+        
+        isAnalyzed: isAnalyzed,
+        currentWordCount: latest ? latest.wordCount : 0, // Return Number for math
+        currentRestrictionScore: latest ? latest.restrictionDensityScore : 0, // Return Number
         lastUpdated: latest ? latest.effectiveDate : "Metadata Only",
         
-        // Full History for Drill-down & Charts
         history: t.snapshots.map(s => ({
             date: s.effectiveDate,
             wordCount: s.wordCount,
