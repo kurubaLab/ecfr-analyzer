@@ -33,7 +33,7 @@ export default function DashboardPage() {
   
   // STATE: Expansion
   const [expandedId, setExpandedId] = useState<number | null>(null); // For Title Table
-  const [expandedAgency, setExpandedAgency] = useState<string | null>(null); // For Agency Table (NEW)
+  const [expandedAgency, setExpandedAgency] = useState<string | null>(null); // For Agency Table
   
   const [chartData, setChartData] = useState<RegulationTitle | null>(null);
 
@@ -68,9 +68,8 @@ export default function DashboardPage() {
     return (diff / previous) * 100;
   };
 
-  // --- AGGREGATION LOGIC (UPDATED) ---
+  // --- AGGREGATION LOGIC ---
   const agencyMetrics = useMemo(() => {
-    // We now store the list of titles ('titleList') for the drill-down
     const map = new Map<string, { count: number, words: number, scoreSum: number, churnSum: number, titleList: RegulationTitle[] }>();
 
     titles.forEach(t => {
@@ -82,11 +81,9 @@ export default function DashboardPage() {
             }
             const entry = map.get(agencyName)!;
             
-            // Add to the list for the drill-down
             entry.titleList.push(t);
             entry.count += 1;
             
-            // Metrics aggregation
             if (t.isAnalyzed) {
                 entry.words += t.currentWordCount;
                 entry.scoreSum += t.currentRestrictionScore;
@@ -98,7 +95,7 @@ export default function DashboardPage() {
     return Array.from(map.entries()).map(([name, stats]) => ({
         name,
         titles: stats.count,
-        titleList: stats.titleList.sort((a,b) => a.number - b.number), // Sort titles 1-50
+        titleList: stats.titleList.sort((a,b) => a.number - b.number),
         words: stats.words,
         avgScore: stats.count > 0 ? (stats.scoreSum / stats.count).toFixed(2) : "0.00",
         avgChurn: stats.count > 0 ? (stats.churnSum / stats.count).toFixed(2) : "0.00"
@@ -119,6 +116,19 @@ export default function DashboardPage() {
       <Navigation />
 
       <div className="p-8 pt-0">
+        
+        {/* --- NEW: DATA DISCLAIMER BANNER --- */}
+        <div className="max-w-7xl mx-auto mb-8 bg-yellow-100 border-4 border-black p-4 flex items-start shadow-sm">
+            <span className="text-3xl mr-4">⚠️</span>
+            <div>
+                <h3 className="font-black uppercase text-lg">Data Completeness Disclaimer</h3>
+                <p className="font-medium text-gray-900">
+                    The analysis below is based on a <strong>partial subset</strong> of Federal Regulations. 
+                    Only Titles and Snapshots explicitly loaded via the Admin Console are included in the calculations. 
+                    This data does not represent the entirety of the US Code of Federal Regulations.
+                </p>
+            </div>
+        </div>
         
         {/* METRIC DEFINITION CARDS */}
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
@@ -194,7 +204,7 @@ export default function DashboardPage() {
                 <thead className="bg-black text-white uppercase font-black">
                     <tr>
                     <th className="px-6 py-4">Title</th>
-                    <th className="px-6 py-4">Regulation Name</th>
+                    <th className="px-6 py-4">Agencies</th>
                     <th className="px-6 py-4 text-right">Words</th>
                     <th className="px-6 py-4 text-right">Restrict. Score</th>
                     <th className="px-6 py-4 text-right">Last Updated</th>
