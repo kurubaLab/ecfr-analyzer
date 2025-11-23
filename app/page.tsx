@@ -32,8 +32,8 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'titles' | 'agencies'>('titles');
   
   // STATE: Expansion
-  const [expandedId, setExpandedId] = useState<number | null>(null); // For Title Table
-  const [expandedAgency, setExpandedAgency] = useState<string | null>(null); // For Agency Table
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedAgency, setExpandedAgency] = useState<string | null>(null);
   
   const [chartData, setChartData] = useState<RegulationTitle | null>(null);
 
@@ -53,7 +53,6 @@ export default function DashboardPage() {
   // --- HELPER: CALCULATE CHURN ---
   const getChurn = (history: Snapshot[]): number => {
     if (!history || history.length < 2) return 0;
-    // Filter only loaded snapshots for math
     const loadedHistory = history.filter(h => h.isLoaded);
     if(loadedHistory.length < 2) return 0;
 
@@ -117,15 +116,14 @@ export default function DashboardPage() {
 
       <div className="p-8 pt-0">
         
-        {/* --- NEW: DATA DISCLAIMER BANNER --- */}
+        {/* DATA DISCLAIMER BANNER */}
         <div className="max-w-7xl mx-auto mb-8 bg-yellow-100 border-4 border-black p-4 flex items-start shadow-sm">
             <span className="text-3xl mr-4">⚠️</span>
             <div>
                 <h3 className="font-black uppercase text-lg">Data Completeness Disclaimer</h3>
                 <p className="font-medium text-gray-900">
                     The analysis below is based on a <strong>partial subset</strong> of Federal Regulations. 
-                    Only Titles and Snapshots explicitly loaded via the Admin Console are included in the calculations. 
-                    This data does not represent the entirety of the US Code of Federal Regulations.
+                    Only Titles and Snapshots explicitly loaded via the Admin Console are included in the calculations.
                 </p>
             </div>
         </div>
@@ -141,31 +139,23 @@ export default function DashboardPage() {
                     Total volume of regulation text. Higher counts indicate larger, more complex regulations.
                 </p>
             </div>
-
             {/* Card 2: Restriction Score */}
             <div className="bg-white border-2 border-green-700 p-5 shadow-md relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-4 h-4 bg-green-100 border-l border-b border-green-700"></div>
                 <h3 className="font-black text-lg uppercase mb-2 text-green-900 border-b-2 border-green-700 pb-2">
                     Metric: Restriction Score
                 </h3>
-                <p className="text-sm font-medium text-green-800 mb-2">
-                    Measures regulatory burden density.
-                </p>
-                <div className="bg-green-50 p-2 border border-green-200 text-xs font-mono text-green-900">
+                <div className="bg-green-50 p-2 border border-green-200 text-xs font-mono text-green-900 mt-2">
                     Formula: (Restrictions / Words) * 1000
                 </div>
             </div>
-
             {/* Card 3: Churn Score */}
             <div className="bg-white border-2 border-yellow-600 p-5 shadow-md relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-4 h-4 bg-yellow-100 border-l border-b border-yellow-600"></div>
                 <h3 className="font-black text-lg uppercase mb-2 text-yellow-900 border-b-2 border-yellow-600 pb-2">
                     Metric: Churn Score
                 </h3>
-                <p className="text-sm font-medium text-yellow-800 mb-2">
-                    Measures instability or volatility.
-                </p>
-                <div className="bg-yellow-50 p-2 border border-yellow-200 text-xs font-mono text-yellow-900">
+                <div className="bg-yellow-50 p-2 border border-yellow-200 text-xs font-mono text-yellow-900 mt-2">
                     Formula: |Current - Previous| / Previous
                 </div>
             </div>
@@ -204,9 +194,11 @@ export default function DashboardPage() {
                 <thead className="bg-black text-white uppercase font-black">
                     <tr>
                     <th className="px-6 py-4">Title</th>
-                    <th className="px-6 py-4">Regulation Name</th>
+                    <th className="px-6 py-4">Regulatory Name</th>
+                    <th className="px-6 py-4 text-center">Agency Count</th>
                     <th className="px-6 py-4 text-right">Words</th>
                     <th className="px-6 py-4 text-right">Restrict. Score</th>
+                    <th className="px-6 py-4 text-right">Churn Score</th>
                     <th className="px-6 py-4 text-right">Last Updated</th>
                     <th className="px-6 py-4 text-center">Actions</th>
                     </tr>
@@ -214,6 +206,9 @@ export default function DashboardPage() {
                 <tbody className="divide-y-2 divide-gray-200">
                     {titles.map((title) => {
                         const churn = getChurn(title.history);
+                        const loadedSnapshots = title.history.filter(h => h.isLoaded).length;
+                        const totalSnapshots = title.history.length;
+
                         return (
                         <Fragment key={title.id}>
                             <tr 
@@ -222,9 +217,15 @@ export default function DashboardPage() {
                             >
                             <td className="px-6 py-4 font-black text-lg border-r border-gray-200">Title {title.number}</td>
                             <td className="px-6 py-4 font-medium border-r border-gray-200">
-                                <div className="text-sm text-gray-900 truncate max-w-xs" title={title.agencies.join(', ')}>
+                                <div className="text-sm text-gray-900 font-bold truncate max-w-xs" title={title.name}>
                                     {title.name}
                                 </div>
+                                <div className="text-xs text-gray-500 mt-1 truncate max-w-xs">
+                                    {title.agencies.join(', ')}
+                                </div>
+                            </td>
+                            <td className="px-6 py-4 text-center font-bold border-r border-gray-200">
+                                {title.agencies.length}
                             </td>
                             <td className="px-6 py-4 text-right font-mono font-bold border-r border-gray-200">
                                 {title.currentWordCount > 0 ? title.currentWordCount.toLocaleString() : "—"}
@@ -235,6 +236,13 @@ export default function DashboardPage() {
                                     {title.currentRestrictionScore.toFixed(2)}
                                 </span>
                                 ) : <span className="text-gray-400 text-xs font-bold">N/A</span>}
+                            </td>
+                            <td className="px-6 py-4 text-right border-r border-gray-200">
+                                 {title.isAnalyzed ? (
+                                    <span className={`px-2 py-1 text-xs font-bold border ${churn > 0 ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
+                                        {churn.toFixed(2)}%
+                                    </span>
+                                 ) : <span className="text-gray-400 text-xs font-bold">N/A</span>}
                             </td>
                             <td className="px-6 py-4 text-right font-medium text-gray-700 border-r border-gray-200">
                                 {title.isAnalyzed ? title.lastUpdated : <span className="bg-gray-200 text-gray-600 px-2 py-1 text-xs font-bold rounded">METADATA</span>}
@@ -254,10 +262,16 @@ export default function DashboardPage() {
                             {/* EXPANDED TITLE ROW (SNAPSHOTS) */}
                             {expandedId === title.id && (
                                 <tr className="bg-gray-50 shadow-inner">
-                                    <td colSpan={7} className="p-6">
-                                        <h4 className="font-black text-sm uppercase text-gray-500 mb-4">
-                                            Full Timeline: Title {title.number}
-                                        </h4>
+                                    <td colSpan={8} className="p-6">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h4 className="font-black text-sm uppercase text-gray-500">
+                                                Full Timeline: Title {title.number}
+                                            </h4>
+                                            <div className="bg-blue-100 text-blue-900 px-3 py-1 rounded font-bold text-xs border border-blue-200">
+                                                Loaded: {loadedSnapshots} / {totalSnapshots} Available Snapshots
+                                            </div>
+                                        </div>
+
                                         <div className="bg-white border-2 border-gray-300 max-h-96 overflow-y-auto">
                                             <div className="grid grid-cols-5 gap-4 font-bold text-sm border-b-2 border-black p-4 bg-gray-100 sticky top-0">
                                                 <div>Effective Date</div>
@@ -297,7 +311,7 @@ export default function DashboardPage() {
                 </table>
             )}
 
-            {/* VIEW 2: AGENCY TABLE (UPDATED WITH EXPAND) */}
+            {/* VIEW 2: AGENCY TABLE */}
             {activeTab === 'agencies' && (
                 <table className="min-w-full text-left">
                     <thead className="bg-black text-white uppercase font-black">
@@ -310,7 +324,11 @@ export default function DashboardPage() {
                         </tr>
                     </thead>
                     <tbody className="divide-y-2 divide-gray-200">
-                        {agencyMetrics.map((agency, idx) => (
+                        {agencyMetrics.map((agency, idx) => {
+                             const loadedTitlesCount = agency.titleList.filter(t => t.isAnalyzed).length;
+                             const totalTitlesCount = agency.titleList.length;
+
+                             return (
                             <Fragment key={idx}>
                                 <tr 
                                     className={`transition-colors cursor-pointer ${expandedAgency === agency.name ? 'bg-blue-50' : 'hover:bg-yellow-50'}`}
@@ -341,11 +359,15 @@ export default function DashboardPage() {
                                 {expandedAgency === agency.name && (
                                     <tr className="bg-gray-50 shadow-inner">
                                         <td colSpan={5} className="p-6">
-                                            <h4 className="font-black text-sm uppercase text-gray-500 mb-4">
-                                                Titles Managed by: {agency.name}
-                                            </h4>
+                                            <div className="flex justify-between items-center mb-4">
+                                                <h4 className="font-black text-sm uppercase text-gray-500">
+                                                    Titles Managed by: {agency.name}
+                                                </h4>
+                                                <div className="bg-blue-100 text-blue-900 px-3 py-1 rounded font-bold text-xs border border-blue-200">
+                                                    Loaded: {loadedTitlesCount} / {totalTitlesCount} Titles
+                                                </div>
+                                            </div>
                                             
-                                            {/* Nested Scrollable Table */}
                                             <div className="bg-white border-2 border-gray-300 max-h-80 overflow-y-auto">
                                                 <div className="grid grid-cols-5 gap-4 font-bold text-sm border-b-2 border-black p-4 bg-gray-100 sticky top-0">
                                                     <div>Title #</div>
@@ -385,7 +407,8 @@ export default function DashboardPage() {
                                     </tr>
                                 )}
                             </Fragment>
-                        ))}
+                        );
+                        })}
                     </tbody>
                 </table>
             )}
