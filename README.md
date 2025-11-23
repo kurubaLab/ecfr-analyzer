@@ -1,4 +1,4 @@
-# USDS Engineering Take-Home: eCFR Analyzer
+# eCFR Analyzer
 
 A Next.js application to analyze Federal Regulations, track historical changes, and calculate regulatory burden metrics (Restriction Scores & Churn).
 
