@@ -31,9 +31,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'titles' | 'agencies'>('titles');
   
-  // STATE: Expansion
+  // STATE: Expansion & Toggles
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [expandedAgency, setExpandedAgency] = useState<string | null>(null);
+  const [showGuide, setShowGuide] = useState(false); // <--- NEW STATE FOR METRIC GUIDE
   
   const [chartData, setChartData] = useState<RegulationTitle | null>(null);
 
@@ -116,50 +117,117 @@ export default function DashboardPage() {
 
       <div className="p-8 pt-0">
         
-        {/* DATA DISCLAIMER BANNER */}
-        <div className="max-w-7xl mx-auto mb-8 bg-yellow-100 border-4 border-black p-4 flex items-start shadow-sm">
-            <span className="text-3xl mr-4">⚠️</span>
-            <div>
-                <h3 className="font-black uppercase text-lg">Data Completeness Disclaimer</h3>
-                <p className="font-medium text-gray-900">
-                    The analysis below is based on a <strong>partial subset</strong> of Federal Regulations. 
-                    Only Titles and Snapshots explicitly loaded via the Admin Console are included in the calculations.
-                </p>
+        {/* HEADER AREA: DISCLAIMER + GUIDE TOGGLE */}
+        <div className="max-w-7xl mx-auto mb-8 space-y-4">
+            {/* Disclaimer */}
+            <div className="bg-yellow-100 border-4 border-black p-4 flex items-start shadow-sm">
+                <span className="text-3xl mr-4">⚠️</span>
+                <div>
+                    <h3 className="font-black uppercase text-lg">Data Completeness Disclaimer</h3>
+                    <p className="font-medium text-gray-900">
+                        The analysis below is based on a <strong>partial subset</strong> of Federal Regulations. 
+                        Only Titles and Snapshots explicitly loaded via the Admin Console are included in the calculations.
+                    </p>
+                </div>
             </div>
+
+            {/* Guide Toggle Button */}
+            <button 
+                onClick={() => setShowGuide(!showGuide)}
+                className="flex items-center text-sm font-black uppercase text-gray-500 hover:text-black transition-colors"
+            >
+                <span className="mr-2 text-lg">{showGuide ? '🔽' : '▶️'}</span>
+                {showGuide ? 'Hide Metric Definitions' : 'View Metric Definitions'}
+            </button>
         </div>
         
-        {/* METRIC DEFINITION CARDS */}
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-            {/* Card 1: Word Count */}
-            <div className="bg-white border-2 border-black p-5 shadow-md">
-                <h3 className="font-black text-lg uppercase mb-2 text-gray-900 border-b-2 border-black pb-2">
-                    Metric: Word Count
-                </h3>
-                <p className="text-sm font-medium text-gray-700">
-                    Total volume of regulation text. Higher counts indicate larger, more complex regulations.
-                </p>
-            </div>
-            {/* Card 2: Restriction Score */}
-            <div className="bg-white border-2 border-green-700 p-5 shadow-md relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-4 h-4 bg-green-100 border-l border-b border-green-700"></div>
-                <h3 className="font-black text-lg uppercase mb-2 text-green-900 border-b-2 border-green-700 pb-2">
-                    Metric: Restriction Score
-                </h3>
-                <div className="bg-green-50 p-2 border border-green-200 text-xs font-mono text-green-900 mt-2">
-                    Formula: (Restrictions / Words) * 1000
+        {/* --- COLLAPSIBLE METRIC DICTIONARY --- */}
+        {showGuide && (
+            <div className="max-w-7xl mx-auto mb-10 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    
+                    {/* 1. Word Count */}
+                    <div className="bg-white border-2 border-black p-5 shadow-md flex flex-col">
+                        <h3 className="font-black text-lg uppercase mb-2 text-gray-900 border-b-2 border-black pb-2">
+                            Word Count
+                        </h3>
+                        <div className="flex-grow">
+                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Definition</p>
+                            <p className="text-sm font-medium text-gray-900 mb-3">Total volume of non-whitespace tokens.</p>
+                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Interpretation</p>
+                            <div className="text-sm text-gray-700 bg-gray-50 p-2 border border-gray-200">
+                                <strong>Size Indicator.</strong> High counts (&gt;1M) suggest complex, expansive regulations expensive to audit.
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 2. Restriction Score */}
+                    <div className="bg-white border-2 border-green-700 p-5 shadow-md flex flex-col relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-4 h-4 bg-green-100 border-l border-b border-green-700"></div>
+                        <h3 className="font-black text-lg uppercase mb-2 text-green-900 border-b-2 border-green-700 pb-2">
+                            Restriction Score
+                        </h3>
+                        <div className="flex-grow">
+                            <p className="text-xs font-bold text-green-700 uppercase mb-1">Formula</p>
+                            <div className="text-xs font-mono text-green-900 mb-3">(Restrictions / Words) * 1000</div>
+                            <p className="text-xs font-bold text-green-700 uppercase mb-1">Interpretation</p>
+                            <div className="text-sm text-green-800 bg-green-50 p-2 border border-green-200">
+                                <strong>Burden Density.</strong> Density of binding rules ("shall", "must"). High scores imply prescriptive/strict rules.
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 3. Churn Score */}
+                    <div className="bg-white border-2 border-yellow-600 p-5 shadow-md flex flex-col relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-4 h-4 bg-yellow-100 border-l border-b border-yellow-600"></div>
+                        <h3 className="font-black text-lg uppercase mb-2 text-yellow-900 border-b-2 border-yellow-600 pb-2">
+                            Churn Score
+                        </h3>
+                        <div className="flex-grow">
+                            <p className="text-xs font-bold text-yellow-700 uppercase mb-1">Formula</p>
+                            <div className="text-xs font-mono text-yellow-900 mb-3">|Current - Previous| / Previous</div>
+                            <p className="text-xs font-bold text-yellow-700 uppercase mb-1">Interpretation</p>
+                            <div className="text-sm text-yellow-800 bg-yellow-50 p-2 border border-yellow-200">
+                                <strong>Volatility.</strong> Measures instability. &gt;10% indicates major rewrites or regulatory overhaul.
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 4. Agency Count */}
+                    <div className="bg-white border-2 border-purple-700 p-5 shadow-md flex flex-col relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-4 h-4 bg-purple-100 border-l border-b border-purple-700"></div>
+                        <h3 className="font-black text-lg uppercase mb-2 text-purple-900 border-b-2 border-purple-700 pb-2">
+                            Agency Count
+                        </h3>
+                        <div className="flex-grow">
+                            <p className="text-xs font-bold text-purple-700 uppercase mb-1">Definition</p>
+                            <p className="text-sm font-medium text-purple-900 mb-3">Number of federal agencies managing this Title.</p>
+                            <p className="text-xs font-bold text-purple-700 uppercase mb-1">Interpretation</p>
+                            <div className="text-sm text-purple-800 bg-purple-50 p-2 border border-purple-200">
+                                <strong>Jurisdiction.</strong> Higher numbers (&gt;1) indicate shared oversight, potentially leading to conflicting rules.
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 5. Checksum */}
+                    <div className="bg-white border-2 border-gray-500 p-5 shadow-md flex flex-col relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-4 h-4 bg-gray-200 border-l border-b border-gray-500"></div>
+                        <h3 className="font-black text-lg uppercase mb-2 text-gray-800 border-b-2 border-gray-500 pb-2">
+                            SHA-256 Checksum
+                        </h3>
+                        <div className="flex-grow">
+                            <p className="text-xs font-bold text-gray-600 uppercase mb-1">Definition</p>
+                            <p className="text-sm font-medium text-gray-900 mb-3">Cryptographic hash of the raw XML text.</p>
+                            <p className="text-xs font-bold text-gray-600 uppercase mb-1">Interpretation</p>
+                            <div className="text-sm text-gray-800 bg-gray-100 p-2 border border-gray-300">
+                                <strong>Identity.</strong> Acts as a digital fingerprint. If the checksum changes, the regulation text has changed (even by 1 char).
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
-            {/* Card 3: Churn Score */}
-            <div className="bg-white border-2 border-yellow-600 p-5 shadow-md relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-4 h-4 bg-yellow-100 border-l border-b border-yellow-600"></div>
-                <h3 className="font-black text-lg uppercase mb-2 text-yellow-900 border-b-2 border-yellow-600 pb-2">
-                    Metric: Churn Score
-                </h3>
-                <div className="bg-yellow-50 p-2 border border-yellow-200 text-xs font-mono text-yellow-900 mt-2">
-                    Formula: |Current - Previous| / Previous
-                </div>
-            </div>
-        </div>
+        )}
 
         {/* TAB CONTROLS */}
         <div className="max-w-7xl mx-auto mb-6 flex space-x-4">
@@ -363,11 +431,13 @@ export default function DashboardPage() {
                                                 <h4 className="font-black text-sm uppercase text-gray-500">
                                                     Titles Managed by: {agency.name}
                                                 </h4>
+                                                {/* NEW LOAD LABEL */}
                                                 <div className="bg-blue-100 text-blue-900 px-3 py-1 rounded font-bold text-xs border border-blue-200">
                                                     Loaded: {loadedTitlesCount} / {totalTitlesCount} Titles
                                                 </div>
                                             </div>
                                             
+                                            {/* Nested Scrollable Table */}
                                             <div className="bg-white border-2 border-gray-300 max-h-80 overflow-y-auto">
                                                 <div className="grid grid-cols-5 gap-4 font-bold text-sm border-b-2 border-black p-4 bg-gray-100 sticky top-0">
                                                     <div>Title #</div>
