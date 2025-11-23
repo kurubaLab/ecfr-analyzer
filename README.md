@@ -43,3 +43,37 @@ The database starts empty. You must seed it via the UI:
 * **Database:** SQLite + Prisma
 * **Styling:** Tailwind CSS (High Contrast / Brutalist Design)
 * **Charts:** Recharts
+
+
+## UI Screenshots
+
+### Dashboard (Title View)
+![Dashboard Title View](./screenshots/regulation_analysis.png)
+
+### Dashboard (Title View with History)
+![Dashboard Title History](./screenshots/regulation_history.png)
+
+### Dashboard (Agency View)
+![Dashboard Agency View](./screenshots/agency_analysis.png)
+
+### Dashboard (Agency View with Titles)
+![Dashboard Agency Title View](./screenshots/agency_titles.png)
+
+### Historical Chart Analysis
+![Chart Analysis](./screenshots/chart_word_change.png)
+
+### Admin Console (Select Mode)
+![Admin Console](./screenshots/data_load_options.png)
+
+### Admin Console (Select Mode)
+![Admin Metadata Load](./screenshots/meta_data_load.png)
+
+### Admin Console (Select Mode)
+![Admin Demo Data Load](./screenshots/demo_data_loading.png)
+
+### Admin Console (Select Mode)
+![Admin Custom Regulatory Data Load](./screenshots/custom_regulatory_data_load.png)
+
+
+### Dashboard Metric Guide (Select Mode)
+![Dashboard Metric Definitions](./screenshots/metric_definitions.png)
