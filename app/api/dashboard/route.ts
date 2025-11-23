@@ -6,46 +6,61 @@ const prisma = new PrismaClient();
 
 export async function GET() {
   try {
-    // Fetch ALL Titles with their Agencies and Snapshots
+    // Fetch Titles with Agencies and Analyzed Snapshots
     const titles = await prisma.regulationTitle.findMany({
       orderBy: { titleNumber: 'asc' },
       include: {
         agencies: {
-          include: { agency: true } // Get the Agency names
+          include: { agency: true }
         },
         snapshots: {
-          orderBy: { effectiveDate: 'desc' } // Newest first
+          orderBy: { effectiveDate: 'desc' }
         }
       }
     });
 
-    // Transform for the Frontend
     const formattedTitles = titles.map(t => {
-      const latest = t.snapshots[0]; // The most recent scrape
-      const agencyNames = t.agencies.map(a => a.agency.name).join(", ");
+      const latest = t.snapshots[0];
+      const agencyNames = t.agencies.map(a => a.agency.name);
       
-      // Determine if this is "Metadata Only" or "Analyzed"
       const isAnalyzed = t.snapshots.length > 0;
 
-return {
+      // --- NEW MERGE LOGIC ---
+      // 1. Parse the full list of available dates (Metadata)
+      let allDates: string[] = [];
+      try {
+        allDates = JSON.parse(t.snapshotDates || "[]");
+      } catch (e) {
+        allDates = [];
+      }
+
+      // 2. Create a Map of analyzed snapshots for quick lookup
+      const analyzedMap = new Map();
+      t.snapshots.forEach(s => analyzedMap.set(s.effectiveDate, s));
+
+      // 3. Build the merged history (All dates, populated where possible)
+      const mergedHistory = allDates.map(date => {
+        const analyzed = analyzedMap.get(date);
+        return {
+            date: date,
+            isLoaded: !!analyzed, // Boolean flag for the UI
+            wordCount: analyzed ? analyzed.wordCount : 0,
+            restrictionScore: analyzed ? analyzed.restrictionDensityScore.toFixed(2) : "—",
+            checksum: analyzed ? analyzed.checksum : "—"
+        };
+      });
+      // -----------------------
+
+      return {
         id: t.titleNumber,
         number: t.titleNumber,
         name: t.titleName,
-        
-        // CHANGE: Return the array, not just the string
-        agencies: t.agencies.map(a => a.agency.name), 
-        
+        agencies: agencyNames,
         isAnalyzed: isAnalyzed,
-        currentWordCount: latest ? latest.wordCount : 0, // Return Number for math
-        currentRestrictionScore: latest ? latest.restrictionDensityScore : 0, // Return Number
+        currentWordCount: latest ? latest.wordCount : 0,
+        currentRestrictionScore: latest ? latest.restrictionDensityScore : 0,
         lastUpdated: latest ? latest.effectiveDate : "Metadata Only",
-        
-        history: t.snapshots.map(s => ({
-            date: s.effectiveDate,
-            wordCount: s.wordCount,
-            restrictionScore: s.restrictionDensityScore.toFixed(2),
-            checksum: s.checksum
-        }))
+        history: mergedHistory // Return the merged list
       };
     });
 

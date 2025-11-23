@@ -8,6 +8,7 @@ import Navigation from '@/components/Navigation';
 // --- TYPES ---
 interface Snapshot {
   date: string;
+  isLoaded: boolean;
   wordCount: number;
   restrictionScore: string;
   checksum: string;
@@ -184,7 +185,7 @@ export default function DashboardPage() {
                 <thead className="bg-black text-white uppercase font-black">
                     <tr>
                     <th className="px-6 py-4">Title</th>
-                    <th className="px-6 py-4">Agencies</th>
+                    <th className="px-6 py-4">Title Name</th>
                     <th className="px-6 py-4 text-right">Words</th>
                     <th className="px-6 py-4 text-right">Restrict. Score</th>
                     <th className="px-6 py-4 text-right">Churn Score</th>
@@ -238,27 +239,62 @@ export default function DashboardPage() {
                                 )}
                             </td>
                             </tr>
+                            {/*
+                            // 2. UPDATE THE EXPANDED ROW RENDERING (inside the map loop) */}
                             {expandedId === title.id && (
                                 <tr className="bg-gray-50 shadow-inner">
                                     <td colSpan={7} className="p-6">
-                                        <h4 className="font-black text-sm uppercase text-gray-500 mb-4">Snapshot History (Title {title.number})</h4>
-                                        <div className="bg-white border-2 border-gray-300 p-4">
-                                            {title.history.length === 0 ? "No history available." : (
-                                                <div className="grid grid-cols-4 gap-4 font-bold text-sm border-b-2 border-black pb-2 mb-2">
-                                                    <div>Date</div>
-                                                    <div className="text-right">Words</div>
-                                                    <div className="text-right">Score</div>
-                                                    <div>Checksum</div>
-                                                </div>
+                                        <h4 className="font-black text-sm uppercase text-gray-500 mb-4">
+                                            Full Timeline: Title {title.number}
+                                        </h4>
+                                        
+                                        {/* Scrollable Container for Long Histories */}
+                                        <div className="bg-white border-2 border-gray-300 max-h-96 overflow-y-auto">
+                                            <div className="grid grid-cols-5 gap-4 font-bold text-sm border-b-2 border-black p-4 bg-gray-100 sticky top-0">
+                                                <div>Effective Date</div>
+                                                <div>Status</div>
+                                                <div className="text-right">Word Count</div>
+                                                <div className="text-right">Score</div>
+                                                <div>Checksum</div>
+                                            </div>
+
+                                            {title.history.length === 0 ? (
+                                                <div className="p-4 text-gray-500 italic">No timeline metadata available.</div>
+                                            ) : (
+                                                title.history.map((h, i) => (
+                                                    <div key={i} className={`grid grid-cols-5 gap-4 text-sm py-2 px-4 border-b border-gray-100 items-center ${h.isLoaded ? 'bg-white' : 'bg-gray-50 text-gray-400'}`}>
+                                                        
+                                                        {/* Date */}
+                                                        <div className={`font-mono ${h.isLoaded ? 'text-blue-800 font-bold' : ''}`}>
+                                                            {h.date}
+                                                        </div>
+
+                                                        {/* Status Badge */}
+                                                        <div>
+                                                            {h.isLoaded ? (
+                                                                <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold border border-green-200">
+                                                                    ANALYZED
+                                                                </span>
+                                                            ) : (
+                                                                <span className="bg-gray-200 text-gray-500 text-xs px-2 py-1 rounded font-bold">
+                                                                    NOT LOADED
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Metrics */}
+                                                        <div className="text-right font-mono">
+                                                            {h.isLoaded ? h.wordCount.toLocaleString() : "—"}
+                                                        </div>
+                                                        <div className="text-right">
+                                                            {h.restrictionScore}
+                                                        </div>
+                                                        <div className="font-mono text-xs truncate" title={h.checksum}>
+                                                            {h.checksum}
+                                                        </div>
+                                                    </div>
+                                                ))
                                             )}
-                                            {title.history.map((h, i) => (
-                                                <div key={i} className="grid grid-cols-4 gap-4 text-sm py-1 border-b border-gray-100">
-                                                    <div className="text-blue-800">{h.date}</div>
-                                                    <div className="text-right font-mono">{h.wordCount.toLocaleString()}</div>
-                                                    <div className="text-right">{h.restrictionScore}</div>
-                                                    <div className="font-mono text-xs text-gray-400 truncate">{h.checksum}</div>
-                                                </div>
-                                            ))}
                                         </div>
                                     </td>
                                 </tr>
