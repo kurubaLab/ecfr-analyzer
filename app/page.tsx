@@ -46,20 +46,39 @@ export default function DashboardPage() {
       });
   }, []);
 
+  // --- HELPER: CALCULATE CHURN ---
+  // Returns a percentage string (e.g., "5.2%") or "0%"
+  const getChurn = (history: Snapshot[]): number => {
+    if (!history || history.length < 2) return 0;
+    // History is usually sorted by server, but let's be safe: sort Newest First
+    const sorted = [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    const current = sorted[0].wordCount;
+    const previous = sorted[1].wordCount;
+    
+    if (previous === 0) return 0;
+    
+    const diff = Math.abs(current - previous);
+    return (diff / previous) * 100;
+  };
+
   // --- AGGREGATION LOGIC ---
   const agencyMetrics = useMemo(() => {
-    const map = new Map<string, { count: number, words: number, scoreSum: number }>();
+    const map = new Map<string, { count: number, words: number, scoreSum: number, churnSum: number }>();
 
     titles.forEach(t => {
+        const churnVal = getChurn(t.history);
+        
         t.agencies.forEach(agencyName => {
             if (!map.has(agencyName)) {
-                map.set(agencyName, { count: 0, words: 0, scoreSum: 0 });
+                map.set(agencyName, { count: 0, words: 0, scoreSum: 0, churnSum: 0 });
             }
             const entry = map.get(agencyName)!;
             entry.count += 1;
             if (t.isAnalyzed) {
                 entry.words += t.currentWordCount;
                 entry.scoreSum += t.currentRestrictionScore;
+                entry.churnSum += churnVal;
             }
         });
     });
@@ -68,7 +87,8 @@ export default function DashboardPage() {
         name,
         titles: stats.count,
         words: stats.words,
-        avgScore: stats.count > 0 ? (stats.scoreSum / stats.count).toFixed(2) : "0.00"
+        avgScore: stats.count > 0 ? (stats.scoreSum / stats.count).toFixed(2) : "0.00",
+        avgChurn: stats.count > 0 ? (stats.churnSum / stats.count).toFixed(2) : "0.00"
     })).sort((a, b) => b.words - a.words); 
 
   }, [titles]);
@@ -132,74 +152,85 @@ export default function DashboardPage() {
                 <th className="px-6 py-4">Agencies</th>
                 <th className="px-6 py-4 text-right">Words</th>
                 <th className="px-6 py-4 text-right">Restrict. Score</th>
+                <th className="px-6 py-4 text-right">Churn Score</th>
                 <th className="px-6 py-4 text-right">Last Updated</th>
                 <th className="px-6 py-4 text-center">Actions</th>
                 </tr>
             </thead>
             <tbody className="divide-y-2 divide-gray-200">
-                {titles.map((title) => (
-                <Fragment key={title.id}>
-                    <tr 
-                        className={`transition-colors cursor-pointer ${expandedId === title.id ? 'bg-blue-50' : 'hover:bg-gray-100'}`}
-                        onClick={() => setExpandedId(expandedId === title.id ? null : title.id)}
-                    >
-                    <td className="px-6 py-4 font-black text-lg border-r border-gray-200">Title {title.number}</td>
-                    <td className="px-6 py-4 font-medium border-r border-gray-200">
-                        <div className="text-sm text-gray-900 truncate max-w-xs" title={title.agencies.join(', ')}>
-                            {title.name}
-                        </div>
-                    </td>
-                    <td className="px-6 py-4 text-right font-mono font-bold border-r border-gray-200">
-                        {title.currentWordCount > 0 ? title.currentWordCount.toLocaleString() : "—"}
-                    </td>
-                    <td className="px-6 py-4 text-right border-r border-gray-200">
-                        {title.isAnalyzed ? (
-                        <span className={`px-2 py-1 text-xs font-bold border ${title.currentRestrictionScore > 50 ? 'bg-red-100 text-red-900 border-red-300' : 'bg-green-100 text-green-900 border-green-300'}`}>
-                            {title.currentRestrictionScore.toFixed(2)}
-                        </span>
-                        ) : <span className="text-gray-400 text-xs font-bold">N/A</span>}
-                    </td>
-                    <td className="px-6 py-4 text-right font-medium text-gray-700 border-r border-gray-200">
-                        {title.isAnalyzed ? title.lastUpdated : <span className="bg-gray-200 text-gray-600 px-2 py-1 text-xs font-bold rounded">METADATA</span>}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                        {title.isAnalyzed && (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); setChartData(title); }}
-                                className="bg-blue-600 text-white p-2 rounded hover:bg-blue-800 transition"
-                            >
-                            📈 Chart
-                            </button>
-                        )}
-                    </td>
-                    </tr>
-                    {expandedId === title.id && (
-                        <tr className="bg-gray-50 shadow-inner">
-                            <td colSpan={6} className="p-6">
-                                <h4 className="font-black text-sm uppercase text-gray-500 mb-4">Snapshot History (Title {title.number})</h4>
-                                <div className="bg-white border-2 border-gray-300 p-4">
-                                    {title.history.length === 0 ? "No history available." : (
-                                        <div className="grid grid-cols-4 gap-4 font-bold text-sm border-b-2 border-black pb-2 mb-2">
-                                            <div>Date</div>
-                                            <div className="text-right">Words</div>
-                                            <div className="text-right">Score</div>
-                                            <div>Checksum</div>
-                                        </div>
-                                    )}
-                                    {title.history.map((h, i) => (
-                                        <div key={i} className="grid grid-cols-4 gap-4 text-sm py-1 border-b border-gray-100">
-                                            <div className="text-blue-800">{h.date}</div>
-                                            <div className="text-right font-mono">{h.wordCount.toLocaleString()}</div>
-                                            <div className="text-right">{h.restrictionScore}</div>
-                                            <div className="font-mono text-xs text-gray-400 truncate">{h.checksum}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </td>
+                {titles.map((title) => {
+                    const churn = getChurn(title.history);
+                    return (
+                    <Fragment key={title.id}>
+                        <tr 
+                            className={`transition-colors cursor-pointer ${expandedId === title.id ? 'bg-blue-50' : 'hover:bg-gray-100'}`}
+                            onClick={() => setExpandedId(expandedId === title.id ? null : title.id)}
+                        >
+                        <td className="px-6 py-4 font-black text-lg border-r border-gray-200">Title {title.number}</td>
+                        <td className="px-6 py-4 font-medium border-r border-gray-200">
+                            <div className="text-sm text-gray-900 truncate max-w-xs" title={title.agencies.join(', ')}>
+                                {title.name}
+                            </div>
+                        </td>
+                        <td className="px-6 py-4 text-right font-mono font-bold border-r border-gray-200">
+                            {title.currentWordCount > 0 ? title.currentWordCount.toLocaleString() : "—"}
+                        </td>
+                        <td className="px-6 py-4 text-right border-r border-gray-200">
+                            {title.isAnalyzed ? (
+                            <span className={`px-2 py-1 text-xs font-bold border ${title.currentRestrictionScore > 50 ? 'bg-red-100 text-red-900 border-red-300' : 'bg-green-100 text-green-900 border-green-300'}`}>
+                                {title.currentRestrictionScore.toFixed(2)}
+                            </span>
+                            ) : <span className="text-gray-400 text-xs font-bold">N/A</span>}
+                        </td>
+                        <td className="px-6 py-4 text-right border-r border-gray-200">
+                             {title.isAnalyzed ? (
+                                <span className={`px-2 py-1 text-xs font-bold border ${churn > 0 ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
+                                    {churn.toFixed(2)}%
+                                </span>
+                             ) : <span className="text-gray-400 text-xs font-bold">N/A</span>}
+                        </td>
+                        <td className="px-6 py-4 text-right font-medium text-gray-700 border-r border-gray-200">
+                            {title.isAnalyzed ? title.lastUpdated : <span className="bg-gray-200 text-gray-600 px-2 py-1 text-xs font-bold rounded">METADATA</span>}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                            {title.isAnalyzed && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setChartData(title); }}
+                                    className="bg-blue-600 text-white p-2 rounded hover:bg-blue-800 transition"
+                                >
+                                📈 Chart
+                                </button>
+                            )}
+                        </td>
                         </tr>
-                    )}
-                </Fragment>
-                ))}
+                        {expandedId === title.id && (
+                            <tr className="bg-gray-50 shadow-inner">
+                                <td colSpan={7} className="p-6">
+                                    <h4 className="font-black text-sm uppercase text-gray-500 mb-4">Snapshot History (Title {title.number})</h4>
+                                    <div className="bg-white border-2 border-gray-300 p-4">
+                                        {title.history.length === 0 ? "No history available." : (
+                                            <div className="grid grid-cols-4 gap-4 font-bold text-sm border-b-2 border-black pb-2 mb-2">
+                                                <div>Date</div>
+                                                <div className="text-right">Words</div>
+                                                <div className="text-right">Score</div>
+                                                <div>Checksum</div>
+                                            </div>
+                                        )}
+                                        {title.history.map((h, i) => (
+                                            <div key={i} className="grid grid-cols-4 gap-4 text-sm py-1 border-b border-gray-100">
+                                                <div className="text-blue-800">{h.date}</div>
+                                                <div className="text-right font-mono">{h.wordCount.toLocaleString()}</div>
+                                                <div className="text-right">{h.restrictionScore}</div>
+                                                <div className="font-mono text-xs text-gray-400 truncate">{h.checksum}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </td>
+                            </tr>
+                        )}
+                    </Fragment>
+                );
+                })}
             </tbody>
             </table>
         )}
@@ -213,6 +244,7 @@ export default function DashboardPage() {
                     <th className="px-6 py-4 text-right">Titles Managed</th>
                     <th className="px-6 py-4 text-right">Total Analyzed Words</th>
                     <th className="px-6 py-4 text-right">Avg. Restriction Score</th>
+                    <th className="px-6 py-4 text-right">Avg. Churn Score</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-gray-200">
@@ -223,10 +255,17 @@ export default function DashboardPage() {
                             <td className="px-6 py-4 text-right font-mono font-bold border-r border-gray-200">
                                 {agency.words > 0 ? agency.words.toLocaleString() : <span className="text-gray-400">—</span>}
                             </td>
-                            <td className="px-6 py-4 text-right font-bold">
+                            <td className="px-6 py-4 text-right font-bold border-r border-gray-200">
                                 {agency.words > 0 ? (
                                     <span className={`px-2 py-1 text-xs font-bold border ${parseFloat(agency.avgScore) > 50 ? 'bg-black text-white' : 'bg-white text-black border-black'}`}>
                                         {agency.avgScore}
+                                    </span>
+                                ) : <span className="text-gray-400 text-xs">N/A</span>}
+                            </td>
+                             <td className="px-6 py-4 text-right font-bold">
+                                {agency.words > 0 ? (
+                                    <span className={`px-2 py-1 text-xs font-bold border ${parseFloat(agency.avgChurn) > 0 ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
+                                        {agency.avgChurn}%
                                     </span>
                                 ) : <span className="text-gray-400 text-xs">N/A</span>}
                             </td>
