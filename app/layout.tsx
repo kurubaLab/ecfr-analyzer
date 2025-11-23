@@ -20,6 +20,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} bg-gray-50 min-h-screen`}>
         {/* TOP NAVIGATION BAR */}
+        {/*
         <nav className="bg-slate-900 text-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4">
             <div className="flex justify-between h-16">
@@ -37,6 +38,7 @@ export default function RootLayout({
             </div>
           </div>
         </nav>
+         */}
 
         {/* PAGE CONTENT */}
         <main>
