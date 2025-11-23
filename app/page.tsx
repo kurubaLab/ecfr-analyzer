@@ -47,10 +47,8 @@ export default function DashboardPage() {
   }, []);
 
   // --- HELPER: CALCULATE CHURN ---
-  // Returns a percentage string (e.g., "5.2%") or "0%"
   const getChurn = (history: Snapshot[]): number => {
     if (!history || history.length < 2) return 0;
-    // History is usually sorted by server, but let's be safe: sort Newest First
     const sorted = [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     const current = sorted[0].wordCount;
@@ -68,7 +66,6 @@ export default function DashboardPage() {
 
     titles.forEach(t => {
         const churnVal = getChurn(t.history);
-        
         t.agencies.forEach(agencyName => {
             if (!map.has(agencyName)) {
                 map.set(agencyName, { count: 0, words: 0, scoreSum: 0, churnSum: 0 });
@@ -114,6 +111,54 @@ export default function DashboardPage() {
         >
           ADMIN CONSOLE &rarr;
         </Link>
+      </div>
+
+      {/* METRIC DEFINITION CARDS (NEW SECTION) */}
+      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        
+        {/* Card 1: Word Count */}
+        <div className="bg-white border-2 border-black p-5 shadow-md">
+            <h3 className="font-black text-lg uppercase mb-2 text-gray-900 border-b-2 border-black pb-2">
+                Metric: Word Count
+            </h3>
+            <p className="text-sm font-medium text-gray-700">
+                Total volume of regulation text. Higher counts indicate larger, more complex regulations.
+            </p>
+        </div>
+
+        {/* Card 2: Restriction Score */}
+        <div className="bg-white border-2 border-green-700 p-5 shadow-md relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-4 h-4 bg-green-100 border-l border-b border-green-700"></div>
+            <h3 className="font-black text-lg uppercase mb-2 text-green-900 border-b-2 border-green-700 pb-2">
+                Metric: Restriction Score
+            </h3>
+            <p className="text-sm font-medium text-green-800 mb-2">
+                Measures regulatory burden density.
+            </p>
+            <div className="bg-green-50 p-2 border border-green-200 text-xs font-mono text-green-900">
+                Formula: (Restrictions / Words) * 1000
+            </div>
+            <p className="text-xs mt-2 text-green-700">
+                Key terms: "shall", "must", "prohibited".
+            </p>
+        </div>
+
+        {/* Card 3: Churn Score */}
+        <div className="bg-white border-2 border-yellow-600 p-5 shadow-md relative overflow-hidden">
+             <div className="absolute top-0 right-0 w-4 h-4 bg-yellow-100 border-l border-b border-yellow-600"></div>
+            <h3 className="font-black text-lg uppercase mb-2 text-yellow-900 border-b-2 border-yellow-600 pb-2">
+                Metric: Churn Score
+            </h3>
+            <p className="text-sm font-medium text-yellow-800 mb-2">
+                Measures instability or volatility.
+            </p>
+             <div className="bg-yellow-50 p-2 border border-yellow-200 text-xs font-mono text-yellow-900">
+                Formula: |Current - Previous| / Previous
+            </div>
+             <p className="text-xs mt-2 text-yellow-700">
+                High churn indicates recent major rewrites.
+            </p>
+        </div>
       </div>
 
       {/* TAB CONTROLS */}
