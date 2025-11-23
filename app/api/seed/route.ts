@@ -90,36 +90,55 @@ export async function POST() {
     // *Correction for Scraper Logic*: The SRD says /v1/agencies.json provides an array of titleNumbers.
     // Let's re-process the agency list to create the links.
     
+// 5. LINK AGENCIES TO TITLES
+    console.log("... Linking Agencies to Titles");
+    
+    let linkCount = 0;
     for (const agencyData of agenciesList) {
+        // Handle name variations
         const agencyName = agencyData.name || agencyData.short_name;
         const dbAgency = await prisma.agency.findUnique({ where: { name: agencyName }});
         
-        if (dbAgency && agencyData.references) {
-            // references often looks like [{ title: 1, ...}, { title: 5, ...}]
-            for (const ref of agencyData.references) {
-                if (ref.title) {
-                    // Create link if title exists
-                    const titleExists = await prisma.regulationTitle.findUnique({ where: { titleNumber: ref.title }});
-                    if (titleExists) {
-                        // Avoid duplicate PK errors
-                        const linkExists = await prisma.agencyTitle.findUnique({
-                            where: { agencyId_titleNumber: { agencyId: dbAgency.id, titleNumber: ref.title }}
-                        });
+        // FIX: Check for 'cfr_references' instead of 'references'
+        if (dbAgency && agencyData.cfr_references) {
+            for (const ref of agencyData.cfr_references) {
+                // Ensure title is a number
+                if (ref.title && typeof ref.title === 'number') {
+                    
+                    // Only link if we actually scraped this Title (Title 1-5)
+                    // otherwise we violate foreign key constraints
+                    const titleExists = await prisma.regulationTitle.findUnique({ 
+                        where: { titleNumber: ref.title }
+                    });
 
-                        if (!linkExists) {
-                            await prisma.agencyTitle.create({
-                                data: {
-                                    agencyId: dbAgency.id,
-                                    titleNumber: ref.title
-                                }
-                            });
-                        }
+                    if (titleExists) {
+                         await prisma.agencyTitle.upsert({
+                            where: { agencyId_titleNumber: { agencyId: dbAgency.id, titleNumber: ref.title }},
+                            update: {},
+                            create: { agencyId: dbAgency.id, titleNumber: ref.title }
+                        });
+                        linkCount++;
                     }
                 }
             }
         }
     }
-    console.log("✅ Agency-Title Links Created");
+    console.log(`   ✅ Created ${linkCount} verified links from API data.`);
+
+    // FALBACK: If we still have zero links for Title 1 (ACUS), force it.
+    // Your JSON shows ACUS manages Title 1.
+    if (linkCount === 0) {
+         console.log("⚠️ No links found via API. Applying Fallback links...");
+         const acus = await prisma.agency.findFirst({ where: { name: { contains: "Administrative Conference" } } });
+        //  if (acus) {
+        //     await prisma.agencyTitle.createMany({
+        //         data: [
+        //             { agencyId: acus.id, titleNumber: 1 }
+        //         ],
+        //         skipDuplicates: true
+        //     });
+         }
+    }
 
     // 6. PROCESS SNAPSHOTS (First 5 Titles Only)
     const TITLES_TO_PROCESS = 5;
