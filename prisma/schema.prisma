@@ -1,11 +1,63 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client"
-  output   = "../app/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Agency Lookup Table
+model Agency {
+  id     Int           @id @default(autoincrement())
+  name   String        @unique
+  slug   String?       // Helper for API matching
+  titles AgencyTitle[] // Relationship to Junction Table
+}
+
+// 2. Core Regulation Metadata
+model RegulationTitle {
+  titleNumber         Int                  @id
+  titleName           String
+  scrapeStatus        String               @default("PENDING") // PENDING, COMPLETED, ERROR
+  lastScraped         DateTime?
+  
+  // SQLite doesn't support String[], so we store a JSON string like "['2024-01-01']"
+  snapshotDates       String               @default("[]") 
+  
+  // Relationships
+  agencies            AgencyTitle[]
+  snapshots           RegulationSnapshot[]
+}
+
+// 3. Junction Table (Many-to-Many link between Agency and Title)
+model AgencyTitle {
+  agencyId    Int
+  titleNumber Int
+  
+  agency      Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  title       RegulationTitle @relation(fields: [titleNumber], references: [titleNumber], onDelete: Cascade)
+
+  @@id([agencyId, titleNumber]) // Composite Primary Key
+}
+
+// 4. Historical Snapshot and Metrics
+model RegulationSnapshot {
+  id                      Int             @id @default(autoincrement())
+  titleNumber             Int
+  effectiveDate           String          // YYYY-MM-DD
+  
+  // Metrics
+  wordCount               Int
+  checksum                String
+  restrictionCount        Int
+  restrictionDensityScore Float
+  
+  // Relationship
+  title                   RegulationTitle @relation(fields: [titleNumber], references: [titleNumber], onDelete: Cascade)
+
+  // Ensure we don't save the same date twice for the same title
+  @@unique([titleNumber, effectiveDate])
 }
