@@ -6,89 +6,52 @@ const prisma = new PrismaClient();
 
 export async function GET() {
   try {
-    // 1. Fetch Agencies for the Table
-    const agencies = await prisma.agency.findMany({
+    // Fetch ALL Titles with their Agencies and Snapshots
+    const titles = await prisma.regulationTitle.findMany({
+      orderBy: { titleNumber: 'asc' },
       include: {
-        titles: {
-          include: {
-            title: {
-              include: {
-                snapshots: { orderBy: { effectiveDate: 'desc' }, take: 1 }
-              }
-            }
-          }
+        agencies: {
+          include: { agency: true } // Get the Agency names
+        },
+        snapshots: {
+          orderBy: { effectiveDate: 'desc' } // Newest first
         }
       }
     });
 
-    // 2. Fetch Historical Data for the Chart (Aggregate of all Titles 1-5)
-    // We get all snapshots and group them by date
-    const allSnapshots = await prisma.regulationSnapshot.findMany({
-      orderBy: { effectiveDate: 'asc' }
-    });
-
-    // Group by Date (Summing up word counts for that date)
-    const historyMap: Record<string, { date: string; totalWords: number; avgRestrictions: number; count: number }> = {};
-
-    allSnapshots.forEach(snap => {
-      if (!historyMap[snap.effectiveDate]) {
-        historyMap[snap.effectiveDate] = { 
-            date: snap.effectiveDate, 
-            totalWords: 0, 
-            avgRestrictions: 0,
-            count: 0
-        };
-      }
-      historyMap[snap.effectiveDate].totalWords += snap.wordCount;
-      historyMap[snap.effectiveDate].avgRestrictions += snap.restrictionDensityScore;
-      historyMap[snap.effectiveDate].count += 1;
-    });
-
-    const historicalTrends = Object.values(historyMap).map(d => ({
-        date: d.date,
-        totalWords: d.totalWords,
-        avgRestrictionScore: (d.avgRestrictions / d.count).toFixed(2)
-    }));
-
-    // 3. Process Agency Table Data
-    const dashboardData = agencies.map((agency) => {
-      const associatedTitles = agency.titles.map((at) => at.title);
-      let totalWords = 0;
-      let totalRestrictions = 0;
-      let activeTitlesCount = 0;
-      let lastUpdated: Date | null = null;
-
-      associatedTitles.forEach((t) => {
-        const latestSnapshot = t.snapshots[0];
-        if (t.lastScraped) {
-            const scrapeDate = new Date(t.lastScraped);
-            if (!lastUpdated || scrapeDate > lastUpdated) lastUpdated = scrapeDate;
-        }
-
-        if (latestSnapshot) {
-          activeTitlesCount++;
-          totalWords += latestSnapshot.wordCount;
-          totalRestrictions += latestSnapshot.restrictionDensityScore;
-        }
-      });
+    // Transform for the Frontend
+    const formattedTitles = titles.map(t => {
+      const latest = t.snapshots[0]; // The most recent scrape
+      const agencyNames = t.agencies.map(a => a.agency.name).join(", ");
+      
+      // Determine if this is "Metadata Only" or "Analyzed"
+      const isAnalyzed = t.snapshots.length > 0;
 
       return {
-        id: agency.id,
-        name: agency.name,
-        totalTitles: associatedTitles.length,
-        totalWordCount: totalWords.toLocaleString(),
-        avgRestrictionScore: activeTitlesCount > 0 ? (totalRestrictions / activeTitlesCount).toFixed(2) : "0.00",
-        lastUpdated: lastUpdated ? lastUpdated.toISOString().split('T')[0] : 'N/A'
+        id: t.titleNumber,
+        number: t.titleNumber,
+        name: t.titleName,
+        agencies: agencyNames || "Various Agencies",
+        isAnalyzed: isAnalyzed,
+        
+        // Current Metrics (or 0 if not analyzed)
+        currentWordCount: latest ? latest.wordCount.toLocaleString() : "—",
+        currentRestrictionScore: latest ? latest.restrictionDensityScore.toFixed(2) : "—",
+        lastUpdated: latest ? latest.effectiveDate : "Metadata Only",
+        
+        // Full History for Drill-down & Charts
+        history: t.snapshots.map(s => ({
+            date: s.effectiveDate,
+            wordCount: s.wordCount,
+            restrictionScore: s.restrictionDensityScore.toFixed(2),
+            checksum: s.checksum
+        }))
       };
     });
 
-    const activeAgencies = dashboardData.filter(a => a.totalTitles > 0);
-
-    return NextResponse.json({
-        agencies: activeAgencies,
-        history: historicalTrends
-    });
+    return NextResponse.json(formattedTitles);
   } catch (error) {
+    console.error("Dashboard API Error:", error);
     return NextResponse.json({ error: "Failed to load dashboard data" }, { status: 500 });
   }
 }

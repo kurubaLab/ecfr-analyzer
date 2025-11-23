@@ -5,145 +5,96 @@ import { parseStringPromise } from 'xml2js';
 import crypto from 'crypto';
 
 const prisma = new PrismaClient();
-
-// CONSTANTS
 const ECFR_API_BASE = 'https://www.ecfr.gov/api';
 
-// Helper: Calculate SHA-256 Checksum
+// --- HELPERS ---
 function calculateChecksum(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
-
-// Helper: Count words
 function countWords(text: string): number {
   return text.trim().split(/\s+/).length;
 }
-
-// Helper: Count restrictions (shall, must, etc.)
 function countRestrictions(text: string): number {
   const matches = text.match(/\b(shall|must|may not|required|prohibited)\b/gi);
   return matches ? matches.length : 0;
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    console.log("--- STARTING DATABASE RESET & SEED ---");
+    // 1. READ CONFIGURATION FROM REQUEST
+    const body = await req.json();
+    const mode = body.mode || 'demo'; // 'demo' or 'custom'
+    
+    // Default Defaults (Demo Mode)
+    let targetTitles = [1, 2, 3, 4, 5];
+    let snapshotLimit = 5;
 
-    // 1. CLEAR DATABASE (Order matters because of foreign keys)
+    if (mode === 'custom') {
+        // Parse comma-separated string "1, 14, 40" into array [1, 14, 40]
+        if (body.titles) {
+            targetTitles = body.titles
+                .split(',')
+                .map((t: string) => parseInt(t.trim()))
+                .filter((n: number) => !isNaN(n));
+        }
+        if (body.limit) {
+            snapshotLimit = parseInt(body.limit);
+        }
+    }
+
+    console.log(`--- STARTING SEED [Mode: ${mode}] ---`);
+    console.log(`Target Titles: ${targetTitles.join(', ')}`);
+    console.log(`Snapshot Limit: ${snapshotLimit}`);
+
+    // 2. CLEAR DATABASE
+    // We clear everything to ensure a clean slate for the new configuration
     await prisma.regulationSnapshot.deleteMany();
     await prisma.agencyTitle.deleteMany();
     await prisma.regulationTitle.deleteMany();
     await prisma.agency.deleteMany();
-    
     console.log("✅ Database Cleared");
 
-    // 2. FETCH AGENCIES
-    // Using the 'admin/v1/agencies.json' endpoint to get the list
+    // 3. GLOBAL POPULATION (ALL Agencies & ALL Titles)
+    // We always do this so the dropdowns/tables look complete
+    
+    // A. Agencies
     const agenciesRes = await fetch(`${ECFR_API_BASE}/admin/v1/agencies.json`);
     const agenciesData = await agenciesRes.json();
     const agenciesList = agenciesData.agencies || [];
-
-    console.log(`Found ${agenciesList.length} agencies.`);
-
-    // 3. POPULATE AGENCIES
+    
     for (const agency of agenciesList) {
-        // Some names might be duplicates in the API, so we use upsert or ignore
         const name = agency.name || agency.short_name;
         if (name) {
             await prisma.agency.upsert({
                 where: { name: name },
                 update: {},
-                create: { 
-                    name: name,
-                    slug: agency.slug // We might need this for linking
-                }
+                create: { name: name, slug: agency.slug }
             });
         }
     }
-    console.log("✅ Agencies Populated");
+    console.log(`✅ ${agenciesList.length} Agencies Populated`);
 
-    // 4. FETCH TITLES & LINK TO AGENCIES
-    // The titles.json usually just gives a list of titles.
+    // B. Titles
     const titlesRes = await fetch(`${ECFR_API_BASE}/versioner/v1/titles.json`);
     const titlesData = await titlesRes.json();
     const titlesList = titlesData.titles || [];
-
-    // Sort by title number so we process 1, 2, 3... in order
     titlesList.sort((a: any, b: any) => a.number - b.number);
 
-    // Insert Titles
     for (const t of titlesList) {
         await prisma.regulationTitle.create({
             data: {
                 titleNumber: t.number,
                 titleName: t.name,
-                snapshotDates: "[]", // Will populate later for first 5
+                snapshotDates: "[]",
+                scrapeStatus: "PENDING"
             }
         });
     }
-    console.log(`✅ ${titlesList.length} Titles Created`);
+    console.log(`✅ ${titlesList.length} Titles Populated (Metadata)`);
 
-    // 5. LINK AGENCIES TO TITLES
-    // The agencies.json response often contains a "references" or "titles" array.
-    // For simplicity in this assignment, we will assume the 'agencies' endpoint provided the links, 
-    // or we match broadly. 
-    // *Correction for Scraper Logic*: The SRD says /v1/agencies.json provides an array of titleNumbers.
-    // Let's re-process the agency list to create the links.
-    
-// // 5. LINK AGENCIES TO TITLES
-//     console.log("... Linking Agencies to Titles");
-    
-//     let linkCount = 0;
-//     for (const agencyData of agenciesList) {
-//         // Handle name variations
-//         const agencyName = agencyData.name || agencyData.short_name;
-//         const dbAgency = await prisma.agency.findUnique({ where: { name: agencyName }});
-        
-//         // FIX: Check for 'cfr_references' instead of 'references'
-//         if (dbAgency && agencyData.cfr_references) {
-//             for (const ref of agencyData.cfr_references) {
-//                 // Ensure title is a number
-//                 if (ref.title && typeof ref.title === 'number') {
-                    
-//                     // Only link if we actually scraped this Title (Title 1-5)
-//                     // otherwise we violate foreign key constraints
-//                     const titleExists = await prisma.regulationTitle.findUnique({ 
-//                         where: { titleNumber: ref.title }
-//                     });
-
-//                     if (titleExists) {
-//                          await prisma.agencyTitle.upsert({
-//                             where: { agencyId_titleNumber: { agencyId: dbAgency.id, titleNumber: ref.title }},
-//                             update: {},
-//                             create: { agencyId: dbAgency.id, titleNumber: ref.title }
-//                         });
-//                         linkCount++;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     console.log(`   ✅ Created ${linkCount} verified links from API data.`);
-
-//     // FALBACK: If we still have zero links for Title 1 (ACUS), force it.
-//     // Your JSON shows ACUS manages Title 1.
-//     if (linkCount === 0) {
-//          console.log("⚠️ No links found via API. Applying Fallback links...");
-//          const acus = await prisma.agency.findFirst({ where: { name: { contains: "Administrative Conference" } } });
-//         //  if (acus) {
-//         //     await prisma.agencyTitle.createMany({
-//         //         data: [
-//         //             { agencyId: acus.id, titleNumber: 1 }
-//         //         ],
-//         //         skipDuplicates: true
-//         //     });
-//          }
-//     }
-
-// 5. LINK AGENCIES TO TITLES
-    console.log("... Linking Agencies to Titles");
-    
-    // A. API Based Linking
+    // C. Linking (Global)
+    // We try to link ALL agencies to ALL titles using the API data
+    console.log("... Linking Agencies (Global)");
     for (const agencyData of agenciesList) {
         const agencyName = agencyData.name || agencyData.short_name;
         const dbAgency = await prisma.agency.findUnique({ where: { name: agencyName }});
@@ -151,11 +102,8 @@ export async function POST() {
         if (dbAgency && agencyData.cfr_references) {
             for (const ref of agencyData.cfr_references) {
                 if (ref.title && typeof ref.title === 'number') {
-                    // Only link if we scraped this Title (Titles 1-5)
-                    const titleExists = await prisma.regulationTitle.findUnique({ 
-                        where: { titleNumber: ref.title }
-                    });
-
+                    // We can safely link because we loaded ALL titles above
+                    const titleExists = await prisma.regulationTitle.findUnique({ where: { titleNumber: ref.title }});
                     if (titleExists) {
                          await prisma.agencyTitle.upsert({
                             where: { agencyId_titleNumber: { agencyId: dbAgency.id, titleNumber: ref.title }},
@@ -168,124 +116,99 @@ export async function POST() {
         }
     }
 
-    // B. MANUAL MAPPING (Ensure Titles 1-5 are assigned for the Demo)
-    // This fixes the issue where the API doesn't explicitly link Title 3 to "The President" in the way we expect
-    const demoMappings: Record<number, string> = {
-        1: "Administrative Committee of the Federal Register",
-        2: "Government Accountability Office", // Often manages Title 4 too
-        3: "Executive Office of the President",
-        4: "Government Accountability Office",
-        5: "Office of Personnel Management"
-    };
-
-    for (const [tNum, agencyName] of Object.entries(demoMappings)) {
-        const titleNumInt = parseInt(tNum);
-        
-        // Find the title
-        const title = await prisma.regulationTitle.findUnique({ where: { titleNumber: titleNumInt }});
-        
-        // Find the agency (using contains to be safe on exact naming)
-        const agency = await prisma.agency.findFirst({ 
-            where: { name: { contains: agencyName } }
-        });
-
-        if (title && agency) {
-             // Create the link if it doesn't exist
-             await prisma.agencyTitle.upsert({
-                where: { agencyId_titleNumber: { agencyId: agency.id, titleNumber: titleNumInt }},
-                update: {},
-                create: { agencyId: agency.id, titleNumber: titleNumInt }
-            });
-            console.log(`   ✅ Manually linked Title ${titleNumInt} to ${agency.name}`);
-        }
-    }
-    
-    console.log("✅ Agency-Title Links Verified");
-
-    // 6. PROCESS SNAPSHOTS (First 5 Titles Only)
-    const TITLES_TO_PROCESS = 5;
-    const SNAPSHOTS_PER_TITLE = 3;
-
-    for (let i = 0; i < TITLES_TO_PROCESS; i++) {
-        const title = titlesList[i];
-        if (!title) break;
-
-        console.log(`Processing Title ${title.number}...`);
-
-        // A. Fetch available versions (dates) for this title
-        // Endpoint: /versioner/v1/versions/title-{number}.json
-        const versionsRes = await fetch(`${ECFR_API_BASE}/versioner/v1/versions/title-${title.number}.json`);
-        const versionsData = await versionsRes.json();
-      
-        // // Extract dates (issue_date) and sort descending (newest first)
-        // const allDates = (versionsData.content_versions || [])
-        //     .map((v: any) => v.issue_date)
-        //     .sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime());
-        
-        // Extract dates, DEDUPLICATE them, and sort descending
-        const rawDates = (versionsData.content_versions || []).map((v: any) => v.issue_date);
-        const uniqueDates = Array.from(new Set(rawDates)) as string[]; // Remove duplicates
-        
-        const allDates = uniqueDates.sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime());
-
-
-        // Update the Title record with ALL dates (as JSON string)
-        await prisma.regulationTitle.update({
-            where: { titleNumber: title.number },
-            data: { snapshotDates: JSON.stringify(allDates) }
-        });
-
-        // B. Fetch XML for the top 3 dates
-        const datesToScrape = allDates.slice(0, SNAPSHOTS_PER_TITLE);
-
-        for (const date of datesToScrape) {
-             // Endpoint: /versioner/v1/full/{date}/title-{number}.xml
-             const xmlUrl = `${ECFR_API_BASE}/versioner/v1/full/${date}/title-${title.number}.xml`;
-             console.log(`   Fetching XML for ${date}...`);
-             
-             try {
-                 const xmlRes = await fetch(xmlUrl);
-                 const xmlText = await xmlRes.text();
-
-                 // Parse XML to get raw text (removes tags roughly)
-                 const parsed = await parseStringPromise(xmlText);
-                 // JSON.stringify is a quick way to flatten the XML object to text for counting
-                 const rawString = JSON.stringify(parsed); 
-
-                 // Calculate Metrics
-                 const wCount = countWords(rawString);
-                 const rCount = countRestrictions(rawString);
-                 const check = calculateChecksum(rawString);
-                 const density = wCount > 0 ? (rCount / wCount) * 1000 : 0;
-
-                 // Save Snapshot
-                 await prisma.regulationSnapshot.create({
-                     data: {
-                         titleNumber: title.number,
-                         effectiveDate: date,
-                         wordCount: wCount,
-                         restrictionCount: rCount,
-                         checksum: check,
-                         restrictionDensityScore: density
-                     }
-                 });
-
-             } catch (err) {
-                 console.error(`   Failed to fetch/parse ${date} for Title ${title.number}`, err);
-             }
-        }
-        
-        // Mark as Scraped
-        await prisma.regulationTitle.update({
-            where: { titleNumber: title.number },
-            data: { 
-                scrapeStatus: "COMPLETED",
-                lastScraped: new Date()
+// Fallback: Ensure ACUS links to Title 1 if missed
+    const acus = await prisma.agency.findFirst({ where: { name: { contains: "Administrative Conference" } } });
+    if (acus) {
+        // FIX: Use upsert instead of createMany because SQLite doesn't support skipDuplicates
+        await prisma.agencyTitle.upsert({
+            where: { 
+                agencyId_titleNumber: { 
+                    agencyId: acus.id, 
+                    titleNumber: 1 
+                } 
+            },
+            update: {}, // If it exists, do nothing
+            create: { 
+                agencyId: acus.id, 
+                titleNumber: 1 
             }
         });
     }
 
-    return NextResponse.json({ message: "Database Initialized Successfully", success: true });
+    // 4. DEEP SCRAPE (Target Titles Only)
+    // This is where we download the XML and do the math
+    for (const tNum of targetTitles) {
+        console.log(`Processing Target Title ${tNum}...`);
+        
+        // Check if title exists (user might have entered invalid number 999)
+        const titleRecord = await prisma.regulationTitle.findUnique({ where: { titleNumber: tNum }});
+        if (!titleRecord) {
+            console.log(`   Skipping Title ${tNum} (Not found in eCFR)`);
+            continue;
+        }
+
+        // A. Fetch Versions
+        const versionsRes = await fetch(`${ECFR_API_BASE}/versioner/v1/versions/title-${tNum}.json`);
+        const versionsData = await versionsRes.json();
+        
+        const rawDates = (versionsData.content_versions || []).map((v: any) => v.issue_date);
+        const uniqueDates = Array.from(new Set(rawDates)) as string[];
+        const allDates = uniqueDates.sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime());
+
+        // Update Metadata
+        await prisma.regulationTitle.update({
+            where: { titleNumber: tNum },
+            data: { snapshotDates: JSON.stringify(allDates) }
+        });
+
+        // B. Fetch XML (Limited by snapshotLimit)
+        const datesToScrape = allDates.slice(0, snapshotLimit);
+
+        for (const date of datesToScrape) {
+            const xmlUrl = `${ECFR_API_BASE}/versioner/v1/full/${date}/title-${tNum}.xml`;
+            console.log(`   Fetching XML for ${date}...`);
+            
+            try {
+                const xmlRes = await fetch(xmlUrl);
+                if (!xmlRes.ok) throw new Error(`Status ${xmlRes.status}`);
+                
+                const xmlText = await xmlRes.text();
+                const parsed = await parseStringPromise(xmlText);
+                const rawString = JSON.stringify(parsed); 
+
+                const wCount = countWords(rawString);
+                const rCount = countRestrictions(rawString);
+                const check = calculateChecksum(rawString);
+                const density = wCount > 0 ? (rCount / wCount) * 1000 : 0;
+
+                await prisma.regulationSnapshot.create({
+                    data: {
+                        titleNumber: tNum,
+                        effectiveDate: date,
+                        wordCount: wCount,
+                        restrictionCount: rCount,
+                        checksum: check,
+                        restrictionDensityScore: density
+                    }
+                });
+                
+                // Sleep 200ms to be polite to the API
+                await new Promise(r => setTimeout(r, 200));
+
+            } catch (err) {
+                console.error(`   Failed ${date}`, err);
+            }
+        }
+
+        // Mark as Completed
+        await prisma.regulationTitle.update({
+            where: { titleNumber: tNum },
+            data: { scrapeStatus: "COMPLETED", lastScraped: new Date() }
+        });
+    }
+
+    return NextResponse.json({ success: true, message: `Loaded Global Metadata + Deep Scrape for Titles: ${targetTitles.join(',')}` });
+
   } catch (error) {
     console.error("Seed Error:", error);
     return NextResponse.json({ message: "Error seeding database", error: String(error) }, { status: 500 });
