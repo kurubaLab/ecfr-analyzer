@@ -5,11 +5,25 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const ECFR_API_BASE = 'https://www.ecfr.gov/api';
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    console.log("--- STARTING GLOBAL METADATA INIT ---");
+    // 1. Check if "Factory Reset" is requested
+    const body = await req.json().catch(() => ({})); // Handle empty body safely
+    const shouldReset = body.reset === true;
 
-    // 1. Agencies
+    console.log(`--- STARTING METADATA INIT (Reset: ${shouldReset}) ---`);
+
+    if (shouldReset) {
+        console.log("⚠️ WIPING DATABASE...");
+        // Delete in order to respect Foreign Keys
+        await prisma.regulationSnapshot.deleteMany(); // Delete Text/Metrics
+        await prisma.agencyTitle.deleteMany();        // Delete Links
+        await prisma.regulationTitle.deleteMany();    // Delete Titles
+        await prisma.agency.deleteMany();             // Delete Agencies
+        console.log("✅ Database Wiped Clean");
+    }
+
+    // 2. GET AGENCIES
     const agenciesRes = await fetch(`${ECFR_API_BASE}/admin/v1/agencies.json`);
     const agenciesData = await agenciesRes.json();
     const agenciesList = agenciesData.agencies || [];
@@ -25,7 +39,7 @@ export async function POST() {
         }
     }
 
-    // 2. Titles
+    // 3. GET TITLES
     const titlesRes = await fetch(`${ECFR_API_BASE}/versioner/v1/titles.json`);
     const titlesData = await titlesRes.json();
     const titlesList = titlesData.titles || [];
@@ -33,7 +47,7 @@ export async function POST() {
     for (const t of titlesList) {
         await prisma.regulationTitle.upsert({
             where: { titleNumber: t.number },
-            update: { titleName: t.name },
+            update: { titleName: t.name }, // Update name if changed
             create: { 
                 titleNumber: t.number, 
                 titleName: t.name, 
@@ -42,8 +56,7 @@ export async function POST() {
         });
     }
 
-    // 3. Links (Agency <-> Title)
-    // ... (Standard linking logic - kept concise for brevity, assumes same logic as before) ...
+    // 4. LINK AGENCIES TO TITLES
     for (const agencyData of agenciesList) {
         const agencyName = agencyData.name || agencyData.short_name;
         const dbAgency = await prisma.agency.findUnique({ where: { name: agencyName }});
@@ -63,8 +76,7 @@ export async function POST() {
         }
     }
 
-    // 4. Fetch Version Dates for ALL Titles
-    // This is the crucial part: Populating the "Available Dates" dropdowns
+    // 5. FETCH VERSION DATES (Metadata Only)
     for (const t of titlesList) {
         try {
             const versionsRes = await fetch(`${ECFR_API_BASE}/versioner/v1/versions/title-${t.number}.json`);
@@ -81,13 +93,13 @@ export async function POST() {
                     });
                 }
             }
-            await new Promise(r => setTimeout(r, 50)); // Rate limit niceness
+            await new Promise(r => setTimeout(r, 50)); 
         } catch (err) {
             console.warn(`Skipped dates for Title ${t.number}`);
         }
     }
 
-    return NextResponse.json({ success: true, message: "Global Metadata Initialized" });
+    return NextResponse.json({ success: true, message: shouldReset ? "Database Reset & Metadata Initialized" : "Metadata Refreshed (Data Preserved)" });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: String(error) }, { status: 500 });

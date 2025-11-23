@@ -204,7 +204,7 @@ export default function DashboardPage() {
                 <thead className="bg-black text-white uppercase font-black">
                     <tr>
                     <th className="px-6 py-4">Title</th>
-                    <th className="px-6 py-4">Agencies</th>
+                    <th className="px-6 py-4">Regulation Name</th>
                     <th className="px-6 py-4 text-right">Words</th>
                     <th className="px-6 py-4 text-right">Restrict. Score</th>
                     <th className="px-6 py-4 text-right">Last Updated</th>

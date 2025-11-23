@@ -14,22 +14,18 @@ interface TitleMeta {
 
 export default function AdminPage() {
   // --- STATE ---
-  // Global Metadata
   const [initLoading, setInitLoading] = useState(false);
   const [initMessage, setInitMessage] = useState("");
   
-  // Scrape / Selection
   const [titles, setTitles] = useState<TitleMeta[]>([]);
   const [loadingTitles, setLoadingTitles] = useState(true);
   const [mode, setMode] = useState<'demo' | 'user'>('user');
   
-  // User Selection State
   const [selectedTitleNum, setSelectedTitleNum] = useState<number | null>(null);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeMessage, setScrapeMessage] = useState("");
 
-  // --- 1. FETCH TITLES (For Dropdown) ---
   const fetchTitles = async () => {
     setLoadingTitles(true);
     try {
@@ -44,26 +40,35 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    fetchTitles(); // Fetch on load
+    fetchTitles(); 
   }, []);
 
-  // --- 2. HANDLER: GLOBAL INIT ---
-  const handleGlobalInit = async () => {
-    if(!confirm("Initialize Global Metadata? This fetches Agencies, Titles, and Date Lists.")) return;
+  // --- HANDLER: GLOBAL INIT (REFRESH vs RESET) ---
+  const handleInit = async (reset: boolean) => {
+    const action = reset ? "FACTORY RESET" : "Refresh Metadata";
+    const warning = reset 
+        ? "⚠️ DANGER: This will DELETE ALL loaded regulation text and metrics. The database will be reset to Metadata Only. Continue?" 
+        : "Refresh global metadata (Agencies/Titles)? Existing text analysis will be preserved.";
+    
+    if(!confirm(warning)) return;
+    
     setInitLoading(true);
-    setInitMessage("Fetching global metadata (this takes ~30-60s)...");
+    setInitMessage(`${action} in progress... (this takes ~30-60s)`);
+    
     try {
-        await fetch('/api/admin/init', { method: 'POST' });
-        setInitMessage("✅ Metadata Initialized Successfully");
-        fetchTitles(); // Refresh dropdown
+        await fetch('/api/admin/init', { 
+            method: 'POST',
+            body: JSON.stringify({ reset: reset })
+        });
+        setInitMessage(`✅ ${reset ? "Database Reset & Re-initialized" : "Metadata Refreshed"}`);
+        fetchTitles(); 
     } catch(err) {
-        setInitMessage("❌ Error initializing metadata");
+        setInitMessage("❌ Error during initialization");
     } finally {
         setInitLoading(false);
     }
   };
 
-  // --- 3. HANDLER: USER SELECTION LOGIC ---
   const getSelectedTitleData = () => titles.find(t => t.number === selectedTitleNum);
 
   const toggleDate = (date: string) => {
@@ -78,66 +83,40 @@ export default function AdminPage() {
     }
   };
 
-  // --- 4. HANDLER: SCRAPE TRIGGER ---
   const handleScrape = async () => {
+    // ... (Keep existing scrape logic from previous steps) ...
+    // Note: Pasting the exact logic here for completeness
     
-    // --- DEMO MODE LOGIC (Titles 1-5, Top 3 Dates) ---
     if (mode === 'demo') {
         if(!confirm("Run Demo Load? This will sequentially load Titles 1-5 (3 snapshots each).")) return;
-        
         setScrapeLoading(true);
         const targetTitles = [1, 2, 3, 4, 5];
         let errorCount = 0;
-
         for (const tNum of targetTitles) {
-            // Find metadata for this title
             const meta = titles.find(t => t.number === tNum);
-            
-            if (!meta) {
-                console.warn(`Title ${tNum} metadata not found. Skipping.`);
-                continue;
-            }
-
-            // Get latest 3 dates
+            if (!meta) continue;
             const datesToLoad = meta.allDates.slice(0, 3);
             if (datesToLoad.length === 0) continue;
-
-            setScrapeMessage(`Demo Mode: Processing Title ${tNum} (${datesToLoad.length} snapshots)...`);
-
+            setScrapeMessage(`Demo Mode: Processing Title ${tNum}...`);
             try {
-                // Call API for this specific title
                 const res = await fetch('/api/admin/scrape', { 
                     method: 'POST',
                     body: JSON.stringify({ titleNumber: tNum, dates: datesToLoad })
                 });
-                
                 if (!res.ok) errorCount++;
-            } catch (err) {
-                console.error(err);
-                errorCount++;
-            }
+            } catch (err) { errorCount++; }
         }
-
         setScrapeLoading(false);
-        if (errorCount === 0) {
-            setScrapeMessage("✅ Demo Load Complete (Titles 1-5)");
-        } else {
-            setScrapeMessage(`⚠️ Demo Complete with ${errorCount} errors.`);
-        }
-        fetchTitles(); // Refresh badges
+        setScrapeMessage(errorCount === 0 ? "✅ Demo Load Complete" : "⚠️ Demo Complete with errors");
+        fetchTitles();
         return;
-    } 
-    
-    // --- USER SELECT MODE LOGIC ---
-    else {
+    } else {
         if (!selectedTitleNum || selectedDates.length === 0) {
             alert("Please select a title and at least one date.");
             return;
         }
-
         setScrapeLoading(true);
-        setScrapeMessage(`Loading regulation text for ${selectedDates.length} snapshot(s)...`);
-
+        setScrapeMessage(`Loading text for ${selectedDates.length} snapshot(s)...`);
         try {
             const res = await fetch('/api/admin/scrape', { 
                 method: 'POST',
@@ -145,16 +124,11 @@ export default function AdminPage() {
             });
             if(res.ok) {
                 setScrapeMessage("✅ Text Loaded Successfully!");
-                setSelectedDates([]); // Reset selection
-                fetchTitles(); // Refresh so "Loaded" badges update
-            } else {
-                setScrapeMessage("❌ Error loading text.");
-            }
-        } catch(err) {
-            setScrapeMessage("❌ Network Error");
-        } finally {
-            setScrapeLoading(false);
-        }
+                setSelectedDates([]); 
+                fetchTitles();
+            } else { setScrapeMessage("❌ Error loading text."); }
+        } catch(err) { setScrapeMessage("❌ Network Error"); }
+        finally { setScrapeLoading(false); }
     }
   };
 
@@ -166,18 +140,38 @@ export default function AdminPage() {
         
         {/* SECTION 1: GLOBAL METADATA */}
         <div className="bg-white p-8 border-4 border-black mb-8 shadow-lg">
-            <h2 className="text-2xl font-black uppercase mb-4 border-b-4 border-black pb-2">1. Global Metadata Initialization</h2>
-            <p className="mb-4 text-gray-700 font-medium">
-                Step 1: Fetch the list of all Agencies, Titles, and historical dates. Does NOT download text.
+            <h2 className="text-2xl font-black uppercase mb-4 border-b-4 border-black pb-2">1. System Initialization</h2>
+            <p className="mb-6 text-gray-700 font-medium">
+                Manage the core database structure (Agencies, Titles, Version Dates).
             </p>
-            <button 
-                onClick={handleGlobalInit}
-                disabled={initLoading}
-                className={`w-full py-4 font-black uppercase tracking-widest border-4 border-black ${initLoading ? 'bg-gray-300' : 'bg-blue-600 text-white hover:bg-blue-800'}`}
-            >
-                {initLoading ? 'Initializing...' : 'Initialize Metadata'}
-            </button>
-            {initMessage && <div className="mt-4 font-bold">{initMessage}</div>}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* REFRESH BUTTON */}
+                <div>
+                    <button 
+                        onClick={() => handleInit(false)} // reset = false
+                        disabled={initLoading}
+                        className={`w-full py-4 font-black uppercase tracking-widest border-4 border-black ${initLoading ? 'bg-gray-300' : 'bg-white hover:bg-gray-100'}`}
+                    >
+                        Refresh Metadata
+                    </button>
+                    <p className="text-xs text-gray-500 mt-2 text-center">Updates lists. Keeps existing regulatory text.</p>
+                </div>
+
+                {/* RESET BUTTON */}
+                <div>
+                    <button 
+                        onClick={() => handleInit(true)} // reset = true
+                        disabled={initLoading}
+                        className={`w-full py-4 font-black uppercase tracking-widest border-4 border-black text-white ${initLoading ? 'bg-gray-300' : 'bg-red-700 hover:bg-red-800'}`}
+                    >
+                        Factory Reset
+                    </button>
+                    <p className="text-xs text-red-700 mt-2 text-center font-bold">⚠️ DELETES ALL REGULATORY TEXT DATA</p>
+                </div>
+            </div>
+            
+            {initMessage && <div className={`mt-6 p-4 border-2 text-center font-bold ${initMessage.includes('Error') ? 'bg-red-100 border-red-600' : 'bg-green-100 border-green-600'}`}>{initMessage}</div>}
         </div>
 
         {/* SECTION 2: LOAD REGULATION TEXT */}
@@ -224,7 +218,7 @@ export default function AdminPage() {
                             className="w-full p-4 border-4 border-black font-bold text-lg bg-white"
                             onChange={(e) => {
                                 setSelectedTitleNum(parseInt(e.target.value));
-                                setSelectedDates([]); // Reset dates on title change
+                                setSelectedDates([]); 
                             }}
                             value={selectedTitleNum || ""}
                         >
