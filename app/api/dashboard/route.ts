@@ -6,17 +6,14 @@ const prisma = new PrismaClient();
 
 export async function GET() {
   try {
-    // Fetch all Agencies with their Titles and the LATEST Snapshot for each title
+    // 1. Fetch Agencies for the Table
     const agencies = await prisma.agency.findMany({
       include: {
         titles: {
           include: {
             title: {
               include: {
-                snapshots: {
-                  orderBy: { effectiveDate: 'desc' },
-                  take: 1 // Only get the most recent snapshot
-                }
+                snapshots: { orderBy: { effectiveDate: 'desc' }, take: 1 }
               }
             }
           }
@@ -24,10 +21,38 @@ export async function GET() {
       }
     });
 
-    // Transform the data for the Dashboard Table
+    // 2. Fetch Historical Data for the Chart (Aggregate of all Titles 1-5)
+    // We get all snapshots and group them by date
+    const allSnapshots = await prisma.regulationSnapshot.findMany({
+      orderBy: { effectiveDate: 'asc' }
+    });
+
+    // Group by Date (Summing up word counts for that date)
+    const historyMap: Record<string, { date: string; totalWords: number; avgRestrictions: number; count: number }> = {};
+
+    allSnapshots.forEach(snap => {
+      if (!historyMap[snap.effectiveDate]) {
+        historyMap[snap.effectiveDate] = { 
+            date: snap.effectiveDate, 
+            totalWords: 0, 
+            avgRestrictions: 0,
+            count: 0
+        };
+      }
+      historyMap[snap.effectiveDate].totalWords += snap.wordCount;
+      historyMap[snap.effectiveDate].avgRestrictions += snap.restrictionDensityScore;
+      historyMap[snap.effectiveDate].count += 1;
+    });
+
+    const historicalTrends = Object.values(historyMap).map(d => ({
+        date: d.date,
+        totalWords: d.totalWords,
+        avgRestrictionScore: (d.avgRestrictions / d.count).toFixed(2)
+    }));
+
+    // 3. Process Agency Table Data
     const dashboardData = agencies.map((agency) => {
       const associatedTitles = agency.titles.map((at) => at.title);
-      
       let totalWords = 0;
       let totalRestrictions = 0;
       let activeTitlesCount = 0;
@@ -35,48 +60,35 @@ export async function GET() {
 
       associatedTitles.forEach((t) => {
         const latestSnapshot = t.snapshots[0];
-        
-        // Track the most recent scrape date
         if (t.lastScraped) {
             const scrapeDate = new Date(t.lastScraped);
-            if (!lastUpdated || scrapeDate > lastUpdated) {
-                lastUpdated = scrapeDate;
-            }
+            if (!lastUpdated || scrapeDate > lastUpdated) lastUpdated = scrapeDate;
         }
 
         if (latestSnapshot) {
           activeTitlesCount++;
           totalWords += latestSnapshot.wordCount;
-          // Calculate restriction density for this title to average later
-          // Formula: (RestrictionCount / WordCount) * 1000
-          // But here we might just sum raw restrictions and avg the score? 
-          // The SRD asks for "Avg Restriction Density Score". 
-          // Let's sum the scores and divide by count of titles.
           totalRestrictions += latestSnapshot.restrictionDensityScore;
         }
       });
 
-      const avgDensity = activeTitlesCount > 0 
-        ? (totalRestrictions / activeTitlesCount).toFixed(2) 
-        : "0.00";
-
       return {
         id: agency.id,
         name: agency.name,
-        slug: agency.slug,
         totalTitles: associatedTitles.length,
-        totalWordCount: totalWords.toLocaleString(), // Format with commas
-        avgRestrictionScore: avgDensity,
+        totalWordCount: totalWords.toLocaleString(),
+        avgRestrictionScore: activeTitlesCount > 0 ? (totalRestrictions / activeTitlesCount).toFixed(2) : "0.00",
         lastUpdated: lastUpdated ? lastUpdated.toISOString().split('T')[0] : 'N/A'
       };
     });
 
-    // Filter out agencies with 0 titles to keep the view clean (optional)
     const activeAgencies = dashboardData.filter(a => a.totalTitles > 0);
 
-    return NextResponse.json(activeAgencies);
+    return NextResponse.json({
+        agencies: activeAgencies,
+        history: historicalTrends
+    });
   } catch (error) {
-    console.error("Dashboard API Error:", error);
     return NextResponse.json({ error: "Failed to load dashboard data" }, { status: 500 });
   }
 }
