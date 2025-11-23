@@ -1,36 +1,43 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Testing
-coverage/
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Next.js
+# testing
+/coverage
+
+# next.js
 /.next/
 /out/
 
-# Production
-build/
+# production
+/build
 
-# Misc
+# misc
 .DS_Store
 *.pem
 
-# Debug
+# debug
 npm-debug.log*
 yarn-debug.log*
-ts-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# Local Env Files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# env files (can opt-in for committing if needed)
+.env*
 
-# SQLite Database (Don't commit the actual DB)
-*.sqlite
-*.sqlite-journal
-prisma/dev.db
-prisma/dev.db-journal
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+/app/generated/prisma
